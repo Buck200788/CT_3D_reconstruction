@@ -7,6 +7,8 @@ add_library(Common STATIC
     public/ReconBase.h
     public/ReconAlgoEnum.h
     public/float3_helper.h
+    public/FFT1D.h
+    src/FFT1D.cpp
 )
 
 target_include_directories(Common
