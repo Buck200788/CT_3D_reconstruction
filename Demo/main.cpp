@@ -11,7 +11,7 @@
 int test_FFT1D()
 {
     FFT1D fftSolver;
-    std::vector<double> sig = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    std::vector<double> sig = { 1, 2, 3, 4, 5, 6, 7, 1 };
 
     // Õý±ä»»FFT
     auto fftRes = fftSolver.fft(sig);
@@ -40,8 +40,8 @@ typedef void (*PFN_Destroy)(BaseRecon*);
 
 int main()
 {
-    test_FFT1D();
-    return 0;
+    //test_FFT1D();
+    //return 0;
     CTGeometry geo;
     ReconAlgorithm algo = ReconAlgorithm::FDK;
     std::vector<float> proj(geo.nDetU * geo.nDetV * geo.nViews, 1.f);
@@ -89,6 +89,6 @@ clean:
     if (hDll) FreeLibrary(hDll);
     ReleaseCudaRuntimeHandle();
     std::cout << "Press enter exit...\n";
-    std::cin.get();
+    //std::cin.get();
     return 0;
 }

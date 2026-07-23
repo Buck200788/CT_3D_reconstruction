@@ -1,11 +1,11 @@
 #pragma once
 #define _USE_MATH_DEFINES
-#pragma once
 #include <vector>
 #include <string>
 #include <stdexcept>
 #include <cmath>
 #include <algorithm>
+#include "FFT1D.h"
 
 enum class FilterType
 {
@@ -28,7 +28,7 @@ inline FilterType Str2FilterType(const std::string& s)
     throw std::invalid_argument("invalid filter type");
 }
 
-int nextpow2(int x)
+inline int nextpow2(int x)
 {
     if (x <= 1) return 1;
     int p = 1;

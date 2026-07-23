@@ -1,5 +1,7 @@
 #pragma once
 #include "../Common/public/ReconBase.h"
+#include "filter.h"
+#include <iostream>
 class CpuFDKRecon : public BaseRecon
 {
 public:

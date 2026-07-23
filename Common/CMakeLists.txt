@@ -1,15 +1,6 @@
-add_library(Common STATIC
-	public/filter.h
-    src/filter.cpp
-    src/device_detect.cpp
-	public/device_detect.h
-    public/CTGeometry.h
-    public/ReconBase.h
-    public/ReconAlgoEnum.h
-    public/float3_helper.h
-    public/FFT1D.h
-    src/FFT1D.cpp
-)
+file(GLOB HEADERS public/*.h)
+file(GLOB SRCS src/*.cpp)
+add_library(Common STATIC ${HEADERS} ${SRCS})
 
 target_include_directories(Common
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/public
