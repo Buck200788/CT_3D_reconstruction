@@ -65,7 +65,7 @@ int main()
 
     if (!recon)
     {
-        std::cout << "Use CPU OMP mode\n";
+        std::cout << "Use CPU parallel mode\n";
         hDll = LoadLibraryA("ReconCPU.dll");
         if (hDll)
         {
