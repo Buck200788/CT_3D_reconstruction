@@ -5,8 +5,12 @@
 #include <iostream>
 #include <vector>
 #include <windows.h>
-
+#include <fstream>
 #include "FFT1D.h"
+
+#include <chrono>
+using namespace std::chrono;
+
 
 int test_FFT1D()
 {
@@ -43,9 +47,40 @@ int main()
     //test_FFT1D();
     //return 0;
     CTGeometry geo;
+    geo.nDetU = 512;
+    geo.nDetV = 128;
+    geo.du = 1.0f;
+    geo.dv = 1.0f;
+    geo.SDD = 1000.f;
+    geo.SID = 500.f;
+    geo.pitch = 36.f;
+    geo.nViews = 1600;
+    geo.angleStep = 1.f / 180.f * std::acosf(-1.f);
+    geo.nx = 256;
+    geo.ny = 256;
+    geo.nz = 128;
+    geo.dx = 1.f;
+    geo.dy = 1.f;
+    geo.dz = 1.f;
+    geo.zStart = -80.f;
+
     ReconAlgorithm algo = ReconAlgorithm::FDK;
     std::vector<float> proj(geo.nDetU * geo.nDetV * geo.nViews, 1.f);
-    std::vector<float> volume;
+    std::vector<float> volume(geo.nx * geo.ny * geo.nz, 0.f);
+
+    auto t0 = high_resolution_clock::now();
+
+    std::ifstream ins("D:\\code\\C\\CTRecon\\debug\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
+    if (ins.is_open()) {
+        ins.read(reinterpret_cast<char*>(proj.data()), sizeof(float) * proj.size());
+        ins.close();
+    }
+
+    auto t1 = high_resolution_clock::now();
+    auto cost_ms = duration_cast<milliseconds>(t1 - t0);
+    float cost_s = duration<float>(t1 - t0).count();
+    printf("read projection£º%lld ms£¬%.3f s\n", cost_ms.count(), cost_s);
+    t0 = t1;
 
     BaseRecon* recon = nullptr;
     HMODULE hDll = nullptr;
@@ -86,6 +121,26 @@ int main()
     fnDel(recon);
 
 clean:
+    t1 = high_resolution_clock::now();
+    cost_ms = duration_cast<milliseconds>(t1 - t0);
+    cost_s = duration<float>(t1 - t0).count();
+    printf("reconstruction£º%lld ms£¬%.3f s\n", cost_ms.count(), cost_s);
+    t0 = t1;
+
+    char wf[256] = {};
+    sprintf(wf, "D:\\code\\C\\CTRecon\\debug\\recon_%dx%dx%d.raw", geo.nx, geo.ny, geo.nz);
+    std::ofstream outs(wf, std::ios::binary | std::ios::out);
+    if (outs.is_open()) {
+        outs.write(reinterpret_cast<char*>(volume.data()), sizeof(float) * volume.size());
+        outs.close();
+    }
+
+    t1 = high_resolution_clock::now();
+    cost_ms = duration_cast<milliseconds>(t1 - t0);
+    cost_s = duration<float>(t1 - t0).count();
+    printf("writing recon file£º%lld ms£¬%.3f s\n", cost_ms.count(), cost_s);
+    t0 = t1;
+
     if (hDll) FreeLibrary(hDll);
     ReleaseCudaRuntimeHandle();
     std::cout << "Press enter exit...\n";

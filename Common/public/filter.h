@@ -42,6 +42,7 @@ private:
     std::vector<float> filt; // Ë½ÓĞÂË²¨ºËÊı×é
 public:
     explicit Filter(int len, FilterType filter, float d = 1.0f);
+    void Filter_frequency_domain(int len, FilterType filter, float d = 1.0f);
     const std::vector<float>& GetFilter() const { return filt; }
     const float* Data() const { return filt.data(); }
     size_t Size() const { return filt.size(); }

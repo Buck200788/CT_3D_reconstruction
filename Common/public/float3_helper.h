@@ -84,20 +84,26 @@ CUDA_HOST_DEV inline bool RayPlaneIntersect(
 // 输入：交点hit、当前旋转角theta、几何参数
 CUDA_HOST_DEV inline void WorldHitToUV(
     const float3& hit,
-    float theta,
-    float SDD, float du, float dv,
-    int nDetU, int nDetV,
+    const float3& src,
+    const int nDetU,
+    const int nDetV,
+    float theta, float SDD,
+    float du, float dv,
     float& out_u, float& out_v
 )
 {
-    // 1. 计算局部u物理长度
-    float u_local = hit.x * sinf(theta) - hit.y * cosf(theta); // make sure the u direction is clockwise direction along z direction
-    // 2. 计算局部v物理长度（z直接对应）
-    float v_local = hit.z;
-
-    // 转浮点像素坐标，中心为0
-    out_u = u_local / du;
-    out_v = v_local / dv;
+    // 计算当前角度探测器中心
+    float cosT = cosf(theta);
+    float sinT = sinf(theta);
+    float3 Cdet = src - SDD * make_float3(cosT, sinT, 0.f);
+    // hit相对探测器中心的偏移向量
+    float3 delta = hit - Cdet;
+    // U轴投影
+    float u_local = (delta.x * sinT - delta.y * cosT);
+    // V轴相对探测器中心Z偏移
+    float v_local = delta.z;
+    out_u = u_local / du + 0.5f * nDetU - 0.5f;
+    out_v = v_local / dv + 0.5f * nDetV - 0.5f;
 }
 
 /// @brief 双线性插值读取滤波后投影值
@@ -108,24 +114,26 @@ CUDA_HOST_DEV inline void WorldHitToUV(
 /// @param nDetU/nDetV 探测器像素尺寸
 CUDA_HOST_DEV inline float BilinearInterp(
     const float* proj,
-    int view,
     float u, float v,
     int nDetU, int nDetV
 )
 {
-    // 探测器半宽
-    const float halfU = nDetU * 0.5f;
-    const float halfV = nDetV * 0.5f;
-
-    // 边界判断，越界返回0
-    if (u < -halfU || u > halfU || v < -halfV || v > halfV)
-        return 0.f;
+    const float eps = 1e-5f;
+    if (u<0 || u>nDetU - 1 ||
+        v<0 || v>nDetV - 1)
+        return 0;
 
     // 浮点uv转左下角整数像素下标
     int u0 = static_cast<int>(floorf(u));
     int v0 = static_cast<int>(floorf(v));
-    int u1 = u0 + 1;
-    int v1 = v0 + 1;
+    //int u1 = u0 + 1;
+    //int v1 = v0 + 1;
+
+    const int u1 =
+        (u0 + 1 < nDetU) ? u0 + 1 : u0;
+
+    const int v1 =
+        (v0 + 1 < nDetV) ? v0 + 1 : v0;
 
     // 计算插值权重
     float alpha = u - u0;
@@ -135,16 +143,40 @@ CUDA_HOST_DEV inline float BilinearInterp(
     float w01 = (1.f - alpha) * beta;
     float w11 = alpha * beta;
 
-    // 当前视角数据基地址
-    int view_base = view * nDetU * nDetV;
     // 四个像素内存偏移
-    int idx00 = view_base + v0 * nDetU + u0;
-    int idx10 = view_base + v0 * nDetU + u1;
-    int idx01 = view_base + v1 * nDetU + u0;
-    int idx11 = view_base + v1 * nDetU + u1;
+    int idx00 = v0 * nDetU + u0;
+    int idx10 = v0 * nDetU + u1;
+    int idx01 = v1 * nDetU + u0;
+    int idx11 = v1 * nDetU + u1;
 
     // 加权求和
     float val = w00 * proj[idx00] + w10 * proj[idx10]
         + w01 * proj[idx01] + w11 * proj[idx11];
     return val;
+}
+
+CUDA_HOST_DEV inline bool VoxelToFlatDetectorUV(
+    float x, float y, float z,
+    float beta, float source_z,
+    float SID, float SDD,
+    float du, float dv,
+    int nDetU, int nDetV,
+    float& u_index, float& v_index,
+    float& source_to_voxel_radial)
+{
+    const float c = cosf(beta);
+    const float s = sinf(beta);
+
+    // Distance from source to the voxel plane measured along the central ray.
+    const float den = SID - x * c - y * s;
+    if (den <= 1e-6f) return false;
+
+    const float magnification = SDD / den;
+    const float u_mm = magnification * (x * s - y * c);
+    const float v_mm = magnification * (z - source_z);
+
+    u_index = u_mm / du + 0.5f * static_cast<float>(nDetU) - 0.5f;
+    v_index = v_mm / dv + 0.5f * static_cast<float>(nDetV) - 0.5f;
+    source_to_voxel_radial = den;
+    return true;
 }

@@ -1,7 +1,58 @@
 #include "filter.h"
 #include <fstream>
 
-Filter::Filter(int len, FilterType filter, float d)
+#include "filter.h"
+#include <cmath>
+#include <algorithm>
+
+// Spatial-domain ramp kernel.  CpuFDKRecon performs a spatial convolution,
+// therefore GetFilter() must return h[k], not the FFT/frequency response.
+Filter::Filter(int len, FilterType filter, float detector_spacing)
+{
+    const double pi = std::acos(-1.0);
+    const int radius = len - 1;
+    const int filter_len = 2 * radius + 1;
+    filt.assign(filter_len, 0.f);
+
+    const double d = static_cast<double>(detector_spacing);
+    const double inv_d2 = 1.0 / (d * d);
+
+    for (int k = -radius; k <= radius; ++k) {
+        double h = 0.0;
+        if (k == 0) {
+            h = 0.25 * inv_d2;
+        }
+        else if ((std::abs(k) & 1) != 0) {
+            h = -inv_d2 / (pi * pi * static_cast<double>(k * k));
+        }
+
+        // Ram-Lak is exact here.  Mild spatial truncation windows are supplied
+        // only to keep the old API meaningful; start debugging with RamLak.
+        const double t = static_cast<double>(std::abs(k)) /
+            static_cast<double>(std::max(1, radius));
+        double win = 1.0;
+        switch (filter) {
+        case FilterType::Hann:
+            win = 0.5 * (1.0 + std::cos(pi * t));
+            break;
+        case FilterType::Hamming:
+            win = 0.54 + 0.46 * std::cos(pi * t);
+            break;
+        case FilterType::Cosine:
+            win = std::cos(0.5 * pi * t);
+            break;
+        case FilterType::SheppLogan:
+            if (t > 0.0) win = std::sin(0.5 * pi * t) / (0.5 * pi * t);
+            break;
+        case FilterType::RamLak:
+        default:
+            break;
+        }
+        filt[k + radius] = static_cast<float>(h * win);
+    }
+}
+
+void Filter::Filter_frequency_domain(int len, FilterType filter, float d)
 {
     // 使用高精度PI，和FFT内部统一
     const double pi = std::acos(-1.0);
@@ -30,13 +81,6 @@ Filter::Filter(int len, FilterType filter, float d)
     //printf("FFT输入长度=%zu, filter_len=%d\n", vec_d.size(), filter_len);
     FFT1D fftSolver;
     auto fftRes = fftSolver.fft(vec_d, false);
-    //return;
-    //std::ofstream outs("E:\\test.raw",std::ios::binary);
-    //outs.write(reinterpret_cast<const char*>(vec_d.data()), sizeof(double) * vec_d.size());
-    //std::vector<double>fft_real(fftRes.size(), 0);
-    //for (size_t i = 0; i < fftRes.size(); i++) fft_real[i] = fftRes[i].real();
-    //outs.write(reinterpret_cast<const char*>(fft_real.data()), sizeof(double) * vec_d.size());
-    //outs.close();
 
     for (size_t i = 0; i < halfLen; i++) {
         half_filt[i] = 2.f * static_cast<float>(fftRes[i].real());
