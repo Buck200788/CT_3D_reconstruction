@@ -1,12 +1,26 @@
-file(GLOB HEADERS public/*.h)
-file(GLOB SRCS src/*.cpp)
-add_library(Common STATIC ${HEADERS} ${SRCS})
-target_include_directories(Common
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/public
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+file(GLOB_RECURSE COMMON_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/public/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/public/*.hpp"
 )
-# 删掉下面所有OpenMP代码！
-# find_package(OpenMP REQUIRED)
-# if(OpenMP_CXX_FOUND)
-#    target_link_libraries(Common PUBLIC OpenMP::OpenMP_CXX)
-# endif()
+
+file(GLOB_RECURSE COMMON_SRCS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc"
+)
+
+add_library(Common STATIC
+    ${COMMON_HEADERS}
+    ${COMMON_SRCS}
+)
+
+# Common is linked into shared libraries on Windows and Unix-like systems.
+set_target_properties(Common PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
+
+target_include_directories(Common
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/public"
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)

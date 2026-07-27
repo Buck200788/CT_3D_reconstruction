@@ -2,6 +2,7 @@
 #include "CTGeometry.h"
 #include "ReconAlgoEnum.h"
 #include <vector>
+#include <string>
 
 // Windows DLL导出宏
 #if defined(_WIN32)
@@ -19,8 +20,9 @@ class RECON_API BaseRecon
 {
 protected:
     CTGeometry m_geo;
+    recon_para rec_p;
 public:
-    explicit BaseRecon(const CTGeometry& geo) : m_geo(geo) {}
+    explicit BaseRecon(const CTGeometry& geo, const recon_para& recp) : m_geo(geo), rec_p(recp) {}
     virtual ~BaseRecon() = default;
 
     // 纯虚重建接口
@@ -28,7 +30,7 @@ public:
 };
 
 // 工厂函数声明
-extern "C" RECON_API BaseRecon* CreateCpuRecon(ReconAlgorithm algo, const CTGeometry& geo);
+extern "C" RECON_API BaseRecon* CreateCpuRecon(ReconAlgorithm algo, const CTGeometry& geo, const recon_para& rec_p);
 extern "C" RECON_API void DestroyReconInstance(BaseRecon* ptr);
 
-extern "C" RECON_API BaseRecon* CreateGpuRecon(ReconAlgorithm algo, const CTGeometry& geo);
+extern "C" RECON_API BaseRecon* CreateGpuRecon(ReconAlgorithm algo, const CTGeometry& geo, const recon_para& rec_p);

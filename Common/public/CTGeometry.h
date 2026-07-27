@@ -1,5 +1,6 @@
 #pragma once
 // CT锥束螺旋通用几何参数
+#include <string>
 struct CTGeometry
 {
     // 探测器
@@ -24,4 +25,10 @@ struct CTGeometry
     float dy = 1.f;
     float dz = 1.f;
     float zStart = -64.f;
+};
+
+struct recon_para
+{
+    std::string filter_name;
+    int cuda_device;
 };

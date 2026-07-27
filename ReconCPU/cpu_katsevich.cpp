@@ -1,6 +1,6 @@
 #include "cpu_katsevich.h"
 #include <omp.h>
-CpuKatsevichRecon::CpuKatsevichRecon(const CTGeometry& geo) : BaseRecon(geo) {}
+CpuKatsevichRecon::CpuKatsevichRecon(const CTGeometry& geo, const recon_para& recp) : BaseRecon(geo, recp) {}
 
 void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {

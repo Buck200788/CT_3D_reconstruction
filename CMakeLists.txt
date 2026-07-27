@@ -1,36 +1,92 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Keep CUDA optional so the same source tree can also be configured on a
+# machine without a CUDA Toolkit.
 project(CTReconMain LANGUAGES C CXX)
 
-# 启用C++17（std::execution必须）
+option(CTRECON_BUILD_CUDA "Build the CUDA reconstruction module when CUDA is available" ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# 统一输出目录，所有dll/lib/exe集中存放
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+# Keep executables and shared libraries together. This is especially useful for
+# the plugin-style ReconCPU/ReconGPU DLL layout used by Demo.
+foreach(_cfg Debug Release RelWithDebInfo MinSizeRel)
+    string(TOUPPER "${_cfg}" _cfg_upper)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_cfg_upper}
+        "${CMAKE_BINARY_DIR}/bin/${_cfg}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${_cfg_upper}
+        "${CMAKE_BINARY_DIR}/bin/${_cfg}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${_cfg_upper}
+        "${CMAKE_BINARY_DIR}/lib/${_cfg}")
+endforeach()
+unset(_cfg)
+unset(_cfg_upper)
 
-# Windows静态VC运行库，发布无需额外vcrt dll（保留原有MT）
+# The EXE and DLLs exchange STL objects such as std::vector. Use the shared MSVC
+# runtime so allocations are handled by the same CRT across module boundaries.
 if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    # 关键：开启MSVC STL并行算法支持
+    set(CMAKE_MSVC_RUNTIME_LIBRARY
+        "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
     add_compile_definitions(_ENABLE_PARALLEL_ALGORITHMS)
 endif()
 
-# ========== 1. 必编译公共静态库 ==========
 add_subdirectory(Common)
-# ========== 2. 必编译CPU重建模块 ==========
 add_subdirectory(ReconCPU)
-# ========== 3. 检测CUDA，有则编译GPU模块 ==========
-include(CheckLanguage)
-check_language(CUDA)
-if(CMAKE_CUDA_COMPILER)
-    message(STATUS "CUDA compiler detected, build ReconGPU module")
-    enable_language(CUDA)
-    add_subdirectory(ReconGPU)
-else()
-    message(WARNING "CUDA compiler not found, skip ReconGPU module")
+
+set(CTRECON_HAS_CUDA OFF)
+if(CTRECON_BUILD_CUDA)
+    include(CheckLanguage)
+    check_language(CUDA)
+
+    if(CMAKE_CUDA_COMPILER)
+        enable_language(CUDA)
+        find_package(CUDAToolkit REQUIRED)
+
+        set(CMAKE_CUDA_STANDARD 17)
+        set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+        set(CMAKE_CUDA_EXTENSIONS OFF)
+
+        # Shared is the safest default for a CUDA DLL/plugin. It is a cache
+        # setting, so another platform may select Static in CMake GUI without
+        # editing the CMakeLists files.
+        set(CTRECON_CUDA_RUNTIME_LIBRARY "Shared" CACHE STRING
+            "CUDA runtime linkage: Shared or Static")
+        set_property(CACHE CTRECON_CUDA_RUNTIME_LIBRARY
+            PROPERTY STRINGS Shared Static)
+
+        # Do not hard-code a GPU generation or a CUDA Toolkit version.
+        # With CMake 3.24+, 'native' detects the GPU of the build machine.
+        # A distribution build can change this cache value to all-major or to a
+        # semicolon-separated list such as 75;86;89.
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+            set(CTRECON_CUDA_ARCHITECTURES "native" CACHE STRING
+                "CUDA architectures: native, all, all-major, or a list such as 75;86")
+            set_property(CACHE CTRECON_CUDA_ARCHITECTURES
+                PROPERTY STRINGS native all all-major)
+        else()
+            set(CTRECON_CUDA_ARCHITECTURES "" CACHE STRING
+                "CUDA architectures; empty uses the CUDA compiler/CMake default")
+        endif()
+
+        add_subdirectory(ReconGPU)
+        set(CTRECON_HAS_CUDA ON)
+
+        message(STATUS "CUDA compiler          : ${CMAKE_CUDA_COMPILER}")
+        message(STATUS "CUDA compiler version  : ${CMAKE_CUDA_COMPILER_VERSION}")
+        message(STATUS "CUDA Toolkit version   : ${CUDAToolkit_VERSION}")
+        message(STATUS "CUDA runtime linkage   : ${CTRECON_CUDA_RUNTIME_LIBRARY}")
+        if(CTRECON_CUDA_ARCHITECTURES)
+            message(STATUS "CUDA architectures     : ${CTRECON_CUDA_ARCHITECTURES}")
+        else()
+            message(STATUS "CUDA architectures     : compiler/CMake default")
+        endif()
+    else()
+        message(WARNING
+            "No CUDA compiler was detected. ReconGPU will not be built; "
+            "Common, ReconCPU, and Demo will still be generated.")
+    endif()
 endif()
-# ========== 4. 测试Demo程序 ==========
+
 add_subdirectory(Demo)

@@ -3,7 +3,7 @@
 #include <fstream>
 #include <execution>
 
-CpuFDKRecon::CpuFDKRecon(const CTGeometry& geo) : BaseRecon(geo) {}
+CpuFDKRecon::CpuFDKRecon(const CTGeometry& geo, const recon_para& recp) : BaseRecon(geo, recp) {}
 
 void CpuFDKRecon::ParallelPreprocessProj(std::vector<float>& filter_geom_filted, const std::vector<float>& filter) const
 {
@@ -103,21 +103,23 @@ void CpuFDKRecon::ParallelPreprocessProj(std::vector<float>& filter_geom_filted,
 
 void CpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {
-    Filter filt(m_geo.nDetU, Str2FilterType("ram-lak"), 1.0);
+    Filter filt(m_geo.nDetU, Str2FilterType(rec_p.filter_name), m_geo.du);
     std::vector<float> filter = filt.GetFilter();
     std::cout << "filter length: " << filter.size() << std::endl;
-    //std::ofstream outs("E:\\test.raw",std::ios::binary);
+    //std::ofstream outs("E:\\CFiles\\CTReconTest\\debug\\filter.raw",std::ios::binary);
     //outs.write(reinterpret_cast<const char*>(filter.data()), sizeof(float) * filter.size());
     //outs.close();
+
     //for (size_t i = 0; i < filter.size(); i++)printf("%d %f\n", i, filter[i]);
 
     std::vector<float> proj_geom_filted(proj);
 
     ParallelPreprocessProj(proj_geom_filted, filter);
 
-    //std::ofstream outs("D:\\code\\C\\CTRecon\\debug\\data_512x128x1600.raw",std::ios::binary);
+    //std::ofstream outs("E:\\CFiles\\CTReconTest\\debug\\data1_512x128x1600.raw",std::ios::binary);
     //outs.write(reinterpret_cast<const char*>(proj_geom_filted.data()), sizeof(float) * proj_geom_filted.size());
     //outs.close();
+    //return;
 
     int size = m_geo.nx * m_geo.ny * m_geo.nz;
     vol.assign(size, 0.f);

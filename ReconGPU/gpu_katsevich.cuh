@@ -3,7 +3,7 @@
 class GpuKatsevichRecon : public BaseRecon
 {
 public:
-    explicit GpuKatsevichRecon(const CTGeometry& geo);
+    explicit GpuKatsevichRecon(const CTGeometry& geo, const recon_para& recp);
     void Reconstruct(const std::vector<float>& proj, std::vector<float>& vol) override;
 private:
     void FilterKernel(float* dProj);

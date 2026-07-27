@@ -3,14 +3,14 @@
 #include "gpu_fdk.cuh"
 #include "gpu_katsevich.cuh"
 
-extern "C" RECON_API BaseRecon* CreateGpuRecon(ReconAlgorithm algo, const CTGeometry& geo)
+extern "C" RECON_API BaseRecon* CreateGpuRecon(ReconAlgorithm algo, const CTGeometry& geo, const recon_para& rec_p)
 {
     switch (algo)
     {
     case ReconAlgorithm::FDK:
-        return new GpuFDKRecon(geo);
+        return new GpuFDKRecon(geo, rec_p);
     case ReconAlgorithm::Katsevich:
-        return new GpuKatsevichRecon(geo);
+        return new GpuKatsevichRecon(geo, rec_p);
     default: return nullptr;
     }
 }

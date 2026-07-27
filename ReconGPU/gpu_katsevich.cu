@@ -10,7 +10,7 @@ __global__ void BackProjKern(float* dProj, float* dVol, CTGeometry g)
     // Katsevich反投影GPU预留
 }
 
-GpuKatsevichRecon::GpuKatsevichRecon(const CTGeometry& geo) : BaseRecon(geo) {}
+GpuKatsevichRecon::GpuKatsevichRecon(const CTGeometry& geo, const recon_para& recp) : BaseRecon(geo, recp) {}
 
 void GpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {

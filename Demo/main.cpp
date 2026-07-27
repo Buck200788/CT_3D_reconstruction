@@ -38,8 +38,8 @@ int test_FFT1D()
     return 0;
 }
 
-typedef BaseRecon* (*PFN_CreateCpu)(ReconAlgorithm, const CTGeometry&);
-typedef BaseRecon* (*PFN_CreateGpu)(ReconAlgorithm, const CTGeometry&);
+typedef BaseRecon* (*PFN_CreateCpu)(ReconAlgorithm, const CTGeometry&, const recon_para&);
+typedef BaseRecon* (*PFN_CreateGpu)(ReconAlgorithm, const CTGeometry&, const recon_para&);
 typedef void (*PFN_Destroy)(BaseRecon*);
 
 int main()
@@ -63,6 +63,9 @@ int main()
     geo.dy = 1.f;
     geo.dz = 1.f;
     geo.zStart = -80.f;
+    recon_para rec_p;
+    rec_p.filter_name = "ram-lak";
+    rec_p.cuda_device = 0;
 
     ReconAlgorithm algo = ReconAlgorithm::FDK;
     std::vector<float> proj(geo.nDetU * geo.nDetV * geo.nViews, 1.f);
@@ -70,7 +73,7 @@ int main()
 
     auto t0 = high_resolution_clock::now();
 
-    std::ifstream ins("D:\\code\\C\\CTRecon\\debug\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
+    std::ifstream ins("E:\\CFiles\\CTReconTest\\debug\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
     if (ins.is_open()) {
         ins.read(reinterpret_cast<char*>(proj.data()), sizeof(float) * proj.size());
         ins.close();
@@ -86,7 +89,7 @@ int main()
     HMODULE hDll = nullptr;
     PFN_Destroy fnDel = nullptr;
 
-    if (false && HasAvailableCudaDevice())
+    if (HasAvailableCudaDevice())
     {
         std::cout << "Try GPU mode\n";
         hDll = LoadLibraryA("ReconGPU.dll");
@@ -94,7 +97,7 @@ int main()
         {
             auto fnCreate = (PFN_CreateGpu)GetProcAddress(hDll, "CreateGpuRecon");
             fnDel = (PFN_Destroy)GetProcAddress(hDll, "DestroyReconInstance");
-            if (fnCreate && fnDel) recon = fnCreate(algo, geo);
+            if (fnCreate && fnDel) recon = fnCreate(algo, geo, rec_p);
         }
     }
 
@@ -106,7 +109,7 @@ int main()
         {
             auto fnCreate = (PFN_CreateCpu)GetProcAddress(hDll, "CreateCpuRecon");
             fnDel = (PFN_Destroy)GetProcAddress(hDll, "DestroyReconInstance");
-            if (fnCreate && fnDel) recon = fnCreate(algo, geo);
+            if (fnCreate && fnDel) recon = fnCreate(algo, geo, rec_p);
         }
     }
 
@@ -115,7 +118,6 @@ int main()
         std::cerr << "Load library failed!\n";
         goto clean;
     }
-
     recon->Reconstruct(proj, volume);
     //std::cout << "Reconstruct done, vol size:" << volume.size() << "\n";
     fnDel(recon);
@@ -128,7 +130,7 @@ clean:
     t0 = t1;
 
     char wf[256] = {};
-    sprintf(wf, "D:\\code\\C\\CTRecon\\debug\\recon_%dx%dx%d.raw", geo.nx, geo.ny, geo.nz);
+    sprintf(wf, "E:\\CFiles\\CTReconTest\\debug\\recon_%dx%dx%d.raw", geo.nx, geo.ny, geo.nz);
     std::ofstream outs(wf, std::ios::binary | std::ios::out);
     if (outs.is_open()) {
         outs.write(reinterpret_cast<char*>(volume.data()), sizeof(float) * volume.size());
