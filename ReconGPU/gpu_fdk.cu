@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 #include <iostream>
 #include <fstream>
+#include "float3_helper.h"
 
 __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
 {
@@ -9,6 +10,52 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
     int volSize = geo.nx * geo.ny * geo.nz;
     if (idx >= volSize) return;
     // GPU FDK计算预留
+
+    dVol[idx] = 0.0;
+    const float PI = acosf(-1.0f);
+    const float dz_per_view = geo.pitch / (2.f * PI / geo.angleStep);
+
+    const int nViews_half_loop = static_cast<int>(round(PI / fabs(geo.angleStep)));
+
+    const int det_offset_per_view = geo.nDetU * geo.nDetV;
+
+    const int n_vox_per_slice = geo.nx * geo.ny;
+
+    int z_idx = idx / n_vox_per_slice;
+    int y_idx = idx % n_vox_per_slice /geo.nx;
+    int x_idx = idx % n_vox_per_slice % geo.nx;
+
+    float z_pos= (-0.5f * geo.nz + z_idx + 0.5) * geo.dz;
+    float z_pos_fview = (z_pos - geo.zStart) / dz_per_view;
+    int z_pos_iview = static_cast<int>(roundf(z_pos_fview));
+
+    float y_pos = (-0.5 * geo.ny + 0.5 + y_idx) * geo.dy;
+    float x_pos = (-0.5 * geo.nx + 0.5 + x_idx) * geo.dx;
+
+    for (int iview = z_pos_iview - nViews_half_loop; iview < z_pos_iview + nViews_half_loop; iview++) {
+        if (iview < 0 || iview >= geo.nViews)continue;
+        float angle = iview * geo.angleStep;
+        float ray_dire_x = cos(angle);
+        float ray_dire_y = sin(angle);
+        float sx = geo.SID * ray_dire_x;
+        float sy = geo.SID * ray_dire_y;
+        float sz = iview * dz_per_view + geo.zStart;
+
+        float3 src = make_float3(sx, sy, sz);
+        float3 plane_norm = make_float3(-ray_dire_x, -ray_dire_y, 0.f);
+        const float plane_D = geo.SID - geo.SDD;
+        float3 hits = make_float3(0.f, 0.f, 0.f);
+
+        int det_offset = iview * det_offset_per_view;
+
+        float u, v, den;
+        if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
+            geo.SID, geo.SDD, geo.du, geo.dv,
+            geo.nDetU, geo.nDetV, u, v, den)) continue;
+        const float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
+        const float w = (geo.SID * geo.SID) / (den * den);
+        dVol[idx] += 0.5f * w * q * std::fabs(geo.angleStep);
+    }
 }
 
 __global__ void proj_geom_filted(const float* dProj, float* d_proj_geom_filtered, CTGeometry geo)
@@ -200,6 +247,7 @@ void GpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>
     cuda_status = cudaFree(d_proj_geom_filtered);
     if (cuda_status != cudaSuccess) { printf("cuda free d_proj_geom_filtered failed!!!"); return; }
     if (h_proj_geom_filtered != nullptr)delete[]h_proj_geom_filtered;
+
 }
 
 void GpuFDKRecon::LaunchKernel(float* dProj, float* dVol)

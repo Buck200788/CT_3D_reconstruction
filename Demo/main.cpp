@@ -73,7 +73,7 @@ int main()
 
     auto t0 = high_resolution_clock::now();
 
-    std::ifstream ins("E:\\CFiles\\CTReconTest\\debug\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
+    std::ifstream ins("D:\\code\\C\\CTRecon\\debug\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
     if (ins.is_open()) {
         ins.read(reinterpret_cast<char*>(proj.data()), sizeof(float) * proj.size());
         ins.close();
@@ -130,7 +130,7 @@ clean:
     t0 = t1;
 
     char wf[256] = {};
-    sprintf(wf, "E:\\CFiles\\CTReconTest\\debug\\recon_%dx%dx%d.raw", geo.nx, geo.ny, geo.nz);
+    sprintf(wf, "D:\\code\\C\\CTRecon\\debug\\recon_%dx%dx%d.raw", geo.nx, geo.ny, geo.nz);
     std::ofstream outs(wf, std::ios::binary | std::ios::out);
     if (outs.is_open()) {
         outs.write(reinterpret_cast<char*>(volume.data()), sizeof(float) * volume.size());
