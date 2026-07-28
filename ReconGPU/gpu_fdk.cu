@@ -119,9 +119,13 @@ GpuFDKRecon::GpuFDKRecon(const CTGeometry& geo, const recon_para& recp) : BaseRe
 
 void GpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {
-    Filter filt(m_geo.nDetU, Str2FilterType(rec_p.filter_name), m_geo.du);
+    Filter filt(m_geo.nDetU, Str2FilterType(rec_p.filter_name), m_geo.du, m_geo.scan_type);
     std::vector<float> filter = filt.GetFilter();
     std::cout << "gpu filter length: " << filter.size() << std::endl;
+
+    //for(int i=0;i<filter.size();i++)std::cout <<  filter[i] << std::endl;
+
+    //return;
 
     int pSize = proj.size();
     int vSize = m_geo.nx * m_geo.ny * m_geo.nz;
@@ -234,7 +238,7 @@ void GpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>
     cuda_status=cudaMalloc(&d_vox, vSize * sizeof(float));
     if (cuda_status != cudaSuccess) { printf("cuda malloc d_vox failed!!!"); return; }
 
-    LaunchKernel(d_proj, d_vox);
+    backProjection(d_proj, d_vox);
     cuda_status=cudaMemcpy(vol.data(), d_vox, vSize*sizeof(float), cudaMemcpyDeviceToHost);
     if (cuda_status != cudaSuccess) { printf("cuda memcpy vox failed!!!"); return; }
 
@@ -250,7 +254,7 @@ void GpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>
 
 }
 
-void GpuFDKRecon::LaunchKernel(float* dProj, float* dVol)
+void GpuFDKRecon::backProjection(float* dProj, float* dVol)
 {
     int vSize = m_geo.nx * m_geo.ny * m_geo.nz;
     const int blockSize = 256;

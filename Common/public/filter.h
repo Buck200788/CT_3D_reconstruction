@@ -17,6 +17,7 @@ enum class FilterType
     None
 };
 
+
 inline FilterType Str2FilterType(const std::string& s)
 {
     if (s == "ram-lak")    return FilterType::RamLak;
@@ -41,8 +42,8 @@ class Filter
 private:
     std::vector<float> filt; // Ë½ÓÐÂË²¨ºËÊý×é
 public:
-    explicit Filter(int len, FilterType filter, float d = 1.0f);
-    void Filter_frequency_domain(int len, FilterType filter, float d = 1.0f);
+    void Filter_(int len, FilterType filter, float d = 1.0f, int type=0);
+    explicit Filter(int len, FilterType filter, double spacing = 1.0, int type = 0, double cutoffRatio = 1.0);
     const std::vector<float>& GetFilter() const { return filt; }
     const float* Data() const { return filt.data(); }
     size_t Size() const { return filt.size(); }

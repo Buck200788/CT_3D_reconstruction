@@ -103,7 +103,7 @@ void CpuFDKRecon::ParallelPreprocessProj(std::vector<float>& filter_geom_filted,
 
 void CpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {
-    Filter filt(m_geo.nDetU, Str2FilterType(rec_p.filter_name), m_geo.du);
+    Filter filt(m_geo.nDetU, Str2FilterType(rec_p.filter_name), m_geo.du, m_geo.scan_type);
     std::vector<float> filter = filt.GetFilter();
     std::cout << "filter length: " << filter.size() << std::endl;
     //std::ofstream outs("E:\\CFiles\\CTReconTest\\debug\\filter.raw",std::ios::binary);

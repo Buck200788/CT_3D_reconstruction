@@ -7,7 +7,7 @@ public:
     explicit GpuFDKRecon(const CTGeometry& geo, const recon_para& recp);
     void Reconstruct(const std::vector<float>& proj, std::vector<float>& vol) override;
 private:
-    void LaunchKernel(float* dProj, float* dVol);
+    void backProjection(float* dProj, float* dVol);
     float* d_proj = nullptr;
     float* d_proj_geom_filtered = nullptr;
     float* h_proj_geom_filtered = nullptr;

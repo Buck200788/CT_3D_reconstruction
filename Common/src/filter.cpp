@@ -7,7 +7,7 @@
 
 // Spatial-domain ramp kernel.  CpuFDKRecon performs a spatial convolution,
 // therefore GetFilter() must return h[k], not the FFT/frequency response.
-Filter::Filter(int len, FilterType filter, float detector_spacing)
+void Filter::Filter_(int len, FilterType filter, float detector_spacing, int type)
 {
     const double pi = std::acos(-1.0);
     const int radius = len - 1;
@@ -52,81 +52,133 @@ Filter::Filter(int len, FilterType filter, float detector_spacing)
     }
 }
 
-void Filter::Filter_frequency_domain(int len, FilterType filter, float d)
+Filter::Filter(int len, FilterType filter, double spacing, int type, double cutoffRatio)
 {
-    // 使用高精度PI，和FFT内部统一
+    if (len <= 0)
+        throw std::invalid_argument("len must be positive");
+
+    if (!(spacing > 0.0))
+        throw std::invalid_argument(
+            "spacing must be positive"
+        );
+
+    if (!(cutoffRatio > 0.0 &&
+        cutoffRatio <= 1.0))
+    {
+        throw std::invalid_argument(
+            "cutoffRatio must be in (0, 1]"
+        );
+    }
+
     const double pi = std::acos(-1.0);
-    // 去掉std::max(64, ...) 和Python长度逻辑对齐
-    int order = nextpow2(2 * len);
-    int halfLen = order / 2 + 1;
-    int filter_len = 2 * halfLen - 1;
-    //printf("%d %d\n", halfLen, filter_len);
 
-    this->filt.assign(filter_len, 0.f);
-    auto& filt = this->filt;
-    std::vector<float> half_filt(halfLen, 0.f);
-    half_filt[0] = 0.25f;
+    const int order = nextpow2(2 * len);
+    const int halfLen = order / 2 + 1;
 
-    // 改用double计算系数，消除单精度PI误差
-    for (size_t i = 1; i < halfLen; i += 2) {
-        double denom = (pi * i) * (pi * i);
-        half_filt[i] = static_cast<float>(-1.0 / denom);
+    // 当前采用奇数长度核
+    const int fftLength =  2 * halfLen - 1;
+
+    filt.assign(fftLength, 0.0f);
+
+    std::vector<float> halfKernel(halfLen, 0.0f);
+
+    halfKernel[0] = static_cast<float>( 0.25 / (spacing * spacing));
+
+    for (int i = 1; i < halfLen; i += 2)
+    {
+        double value = 0.0;
+        if (type == 0)
+        {
+            const double x = pi * i * spacing;
+            value = -1.0 / (x * x);
+        }
+        else if (type==1)
+        {
+            const double angle = i * spacing;
+            const double s = std::sin(angle);
+            if (std::abs(s) < 1.0e-12)
+            {
+                throw std::runtime_error("Angular filter singularity");
+            }
+            const double x = pi * s;
+            value = -1.0 / (x * x);
+        }
+        else
+        {
+            throw std::invalid_argument("type must be 0 for equidistant or 1 for equiangular");
+        }
+
+        halfKernel[i] = static_cast<float>(value);
     }
 
-    std::copy(half_filt.begin(), half_filt.end(), filt.begin());
-    for (size_t i = halfLen; i < filter_len; ++i)
-        filt[i] = half_filt[2*halfLen-1-i];
+    // 空间核的循环排列
+    std::copy( halfKernel.begin(),halfKernel.end(),filt.begin());
 
-    std::vector<double> vec_d(filt.begin(), filt.end());
-    //printf("FFT输入长度=%zu, filter_len=%d\n", vec_d.size(), filter_len);
+    for (int i = halfLen; i < fftLength; ++i)
+    {
+        filt[i] = halfKernel[2 * halfLen - 1 - i];
+    }
+
+    std::vector<double> spatial(filt.begin(), filt.end());
+
     FFT1D fftSolver;
-    auto fftRes = fftSolver.fft(vec_d, false);
+    auto spectrum = fftSolver.fft(spatial, false);
 
-    for (size_t i = 0; i < halfLen; i++) {
-        half_filt[i] = 2.f * static_cast<float>(fftRes[i].real());
-        //printf("%f\n", fftRes[i].real());
+    std::vector<float> halfSpectrum( halfLen, 0.0f );
+
+    for (int i = 0; i < halfLen; ++i)
+    {
+        // 这里的 2 是否保留，取决于反投影归一化
+        halfSpectrum[i] =2.0f * static_cast<float>(spectrum[i].real());
     }
-
-    // 窗函数部分 pi替换为double版本
-    for (size_t i = 1; i < halfLen; i++) {
-        double w = 2 * pi * i / order;
-        float win = 1.f;
+    for (int i = 1; i < halfLen; ++i)
+    {
+        const double normalizedFreq =  2.0 * i /(cutoffRatio * fftLength);
+        if (normalizedFreq > 1.0)
+        {
+            halfSpectrum[i] = 0.0f;
+            continue;
+        }
+        float win = 1.0f;
         switch (filter)
         {
         case FilterType::RamLak:
-            win = 1.f;
+            win = 1.0f;
             break;
         case FilterType::SheppLogan:
         {
-            double x = w / (2.0 * d);
-            win = static_cast<float>(std::sin(x) / (x + 1e-9));
+            const double x = 0.5 * pi * normalizedFreq;
+            win = std::abs(x) < 1.0e-12? 1.0f: static_cast<float>(std::sin(x) / x);
             break;
         }
         case FilterType::Cosine:
-        {
-            double x = w / (2.0 * d);
-            win = static_cast<float>(std::cos(x));
+            win = static_cast<float>(std::cos( 0.5 * pi * normalizedFreq ));
             break;
-        }
         case FilterType::Hamming:
-            win = 0.54f + 0.46f * static_cast<float>(std::cos(w / d));
+            win = static_cast<float>( 0.54 + 0.46 * std::cos(pi * normalizedFreq ) );
             break;
         case FilterType::Hann:
-            win = static_cast<float>((1.0 + std::cos(w / d)) * 0.5);
+            win = static_cast<float>( 0.5 + 0.5 * std::cos( pi * normalizedFreq ));
             break;
         default:
-            win = 1.f;
+            win = 1.0f;
+            break;
         }
-        half_filt[i] *= win;
-        // 截止判断使用高精度w
-        if (w > pi * d)
-            half_filt[i] = 0.f;
+        halfSpectrum[i] *= win;
     }
-
-    std::copy(half_filt.begin(), half_filt.end(), filt.begin());
-    for (size_t k = halfLen; k < filter_len; k++)
+    // 恢复完整实对称频谱
+    std::copy(halfSpectrum.begin(),halfSpectrum.end(),filt.begin());
+    for (int k = halfLen;k < fftLength; ++k)
     {
-        filt[k] = half_filt[2 * halfLen - 1 - k];
-        //printf("%f\n", filt[k]);
+        filt[k] = halfSpectrum[2 * halfLen - 1 - k];
+    }
+    std::vector<double> windowedSpectrum(filt.begin(), filt.end() );
+    auto spatialResult =fftSolver.ifft(windowedSpectrum,false );
+    const int centerShift = halfLen;
+
+    for (int i = 0; i < fftLength; ++i)
+    {
+        const int idx = (i + centerShift) %fftLength;
+        filt[i] = static_cast<float>(spatialResult[idx].real() );
     }
 }

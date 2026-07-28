@@ -17,6 +17,8 @@ struct CTGeometry
     int nViews = 360;
     float angleStep = 2.f * 3.1415926535f / 360.f;
 
+    short scan_type = 0;
+
     // 重建体素
     int nx = 64;
     int ny = 64;
