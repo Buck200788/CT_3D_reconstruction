@@ -75,7 +75,7 @@ int main()
     geo.du = 0.002569f; // d_angle
     geo.dv = 5.6f; // d_det
     geo.SDD = 1180.f;
-    geo.SID = 701.;
+    geo.SID = 710.;
     geo.pitch = 120.f;
     geo.nViews = 5040;
     geo.angleStep = 0.5f / 180.f * std::acosf(-1.f);
@@ -98,7 +98,7 @@ int main()
     auto t0 = high_resolution_clock::now();
 
     //std::ifstream ins("D:\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
-    std::ifstream ins("E:\\bag_interp_1_6144x5040.raw", std::ios::binary | std::ios::in);
+    std::ifstream ins("D:\\bag_interp_1_6144x5040.raw", std::ios::binary | std::ios::in);
     if (ins.is_open()) {
         ins.read(reinterpret_cast<char*>(proj.data()), sizeof(float) * proj.size());
         ins.close();
@@ -114,7 +114,7 @@ int main()
     HMODULE hDll = nullptr;
     PFN_Destroy fnDel = nullptr;
 
-    if (false && HasAvailableCudaDevice())
+    if (HasAvailableCudaDevice())
     {
         std::cout << "Try GPU mode\n";
         hDll = LoadLibraryA("ReconGPU.dll");

@@ -65,7 +65,7 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
         workers.emplace_back([this, &proj, &vol, start, end]()
             {
                 const float PI = std::acosf(-1.0f);
-                const float dz_per_view = m_geo.pitch / (2.f * PI / m_geo.angleStep);
+                const float dz_per_view = m_geo.pitch / (2.f * PI / std::fabs(m_geo.angleStep));
                 //printf("dz_per_view: %f\n", dz_per_view);
                 const int nViews_half_loop = static_cast<int>(std::round(PI / std::fabs(m_geo.angleStep)));
                 //printf("%f %f %d\n", PI, m_geo.angleStep, nViews_half_loop);

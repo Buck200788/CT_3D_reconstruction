@@ -13,7 +13,7 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
 
     dVol[idx] = 0.0;
     const float PI = acosf(-1.0f);
-    const float dz_per_view = geo.pitch / (2.f * PI / geo.angleStep);
+    const float dz_per_view = geo.pitch / (2.f * PI / fabs(geo.angleStep));
 
     const int nViews_half_loop = static_cast<int>(round(PI / fabs(geo.angleStep)));
 
@@ -244,12 +244,12 @@ void GpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>
         return;
     }
     
-    cuda_status = cudaMemcpy(h_proj_geom_filtered, d_proj, pSize * sizeof(float), cudaMemcpyDeviceToHost);
-    if (cuda_status != cudaSuccess) {
-        printf("cuda memcpy h_proj_geom_filtered failed!!!");
-        return;
-    }
-    //std::ofstream outs("E:\\CFiles\\CTReconTest\\debug\\debug_projFiltered_512x128x1600.raw",std::ios::binary);
+    //cuda_status = cudaMemcpy(h_proj_geom_filtered, d_proj, pSize * sizeof(float), cudaMemcpyDeviceToHost);
+    //if (cuda_status != cudaSuccess) {
+    //    printf("cuda memcpy h_proj_geom_filtered failed!!!");
+    //    return;
+    //}
+    //std::ofstream outs("D:\\debug_projFiltered_6144x5040.raw",std::ios::binary);
     //if (outs.is_open()) {
     //    std::cout << "writing to file" << std::endl;
     //    outs.write(reinterpret_cast<const char*>(h_proj_geom_filtered), sizeof(float) * pSize);
