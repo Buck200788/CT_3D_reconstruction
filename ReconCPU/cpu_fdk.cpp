@@ -5,101 +5,6 @@
 
 CpuFDKRecon::CpuFDKRecon(const CTGeometry& geo, const recon_para& recp) : BaseRecon(geo, recp) {}
 
-void CpuFDKRecon::ParallelPreprocessProj(std::vector<float>& filter_geom_filted, const std::vector<float>& filter) const
-{
-    unsigned int max_thread_num = std::thread::hardware_concurrency();
-    std::cout << "maximum thread number: " << max_thread_num << std::endl;
-    const int total_view = m_geo.nViews;
-    if (total_view <= 0 || max_thread_num <= 0)
-    {
-        std::cout << "m_geo.nViews: " << total_view << ", thread num invalid" << std::endl;
-        return;
-    }
-
-    unsigned int thread_cnt = std::min(max_thread_num, (unsigned int)total_view);
-    thread_cnt = std::max(thread_cnt, 1U);
-
-    std::vector<std::thread> workers;
-    workers.reserve(thread_cnt);
-
-    int block = total_view / thread_cnt;
-    int remain = total_view % thread_cnt;
-
-    for (unsigned int tid = 0; tid < thread_cnt; tid++)
-    {
-        int start = tid * block + (int)fmin(tid, remain);
-        int end = start + block + (tid < remain ? 1 : 0);
-        //printf("start, end: %d %d\n", start, end);
-
-        workers.emplace_back([this, &filter_geom_filted, &filter, start, end]()
-            {
-                const int SDD = m_geo.SDD;
-                const int nDetU = m_geo.nDetU;
-                const int nDetV = m_geo.nDetV;
-                const float du = m_geo.du;
-                const float dv = m_geo.dv;
-
-                const float D = static_cast<float>(SDD);
-                const float D2 = D * D;
-                const float u_len = du * nDetU;
-                const float v_len = dv * nDetV;
-
-                const int filter_len = static_cast<int>(filter.size());
-                const int half_win = filter_len / 2;
-
-                for (int view = start; view < end; view++)
-                {
-                    for (int iv = 0; iv < nDetV; iv++)
-                    {
-                        // geometry weighted
-                        float v = -0.5f * v_len + (iv + 0.5f) * dv;
-                        for (int iu = 0; iu < nDetU; iu++)
-                        {
-                            float u = -0.5f * u_len + (iu + 0.5f) * du;
-                            int offset = view * nDetV * nDetU + iv * nDetU + iu;
-                            //if (view == 319 && iv == 87) printf("BB %d  %f %f\n", iu, filter_geom_filted[offset], D / std::sqrt(D2 + u * u + v * v));
-                            filter_geom_filted[offset] *= (D / std::sqrt(D2 + u * u + v * v));
-
-                            //if (view == 319 && iv == 87) printf("BB  %f\n", filter_geom_filted[offset]);
-                        }
-                        
-
-                        // 2. U axis conv filter
-                        const int base = view * nDetV * nDetU + iv * nDetU;
-                        std::vector<float> temp_u(nDetU, 0.f);
-                        for (int iu = 0; iu < nDetU; iu++)
-                        {
-                            float sum_conv = 0.f;
-                            for (int iu1 = 0; iu1 < filter_len; iu1++)
-                            {
-                                int iu_shift = iu - half_win + iu1;
-                                if (iu_shift >= 0 && iu_shift < nDetU)
-                                {
-                                    int pix_idx = base + iu_shift;
-                                    sum_conv += filter[iu1] * filter_geom_filted[pix_idx];
-                                }
-                            }
-                            temp_u[iu] = sum_conv;
-
-                            //if (view == 319 && iv == 87) printf("AA  %f\n", sum_conv);
-                        }
-                        // write back the results
-                        for (int iu = 0; iu < nDetU; iu++)
-                        {
-                            filter_geom_filted[base + iu] = temp_u[iu] * m_geo.du;
-                        }
-                    }
-                }
-            });
-    }
-
-    // wait till all the thread done
-    for (auto& t : workers)
-    {
-        if (t.joinable())
-            t.join();
-    }
-}
 
 void CpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {
@@ -165,6 +70,7 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
                 const int nViews_half_loop = static_cast<int>(std::round(PI / std::fabs(m_geo.angleStep)));
                 //printf("%f %f %d\n", PI, m_geo.angleStep, nViews_half_loop);
                 const int det_offset_per_view = m_geo.nDetU * m_geo.nDetV;
+                const int scan_type = m_geo.scan_type;
                 for (int iz = start; iz < end; iz++) {
                     float z_pos = (-0.5f * m_geo.nz + iz + 0.5) * m_geo.dz;
                     float z_pos_fview = (z_pos - m_geo.zStart) / dz_per_view;
@@ -179,10 +85,10 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
                         float sx = m_geo.SID * ray_dire_x;
                         float sy = m_geo.SID * ray_dire_y;
                         float sz = iview * dz_per_view + m_geo.zStart;
-                        float3 src = make_float3(sx, sy, sz);
-                        float3 plane_norm = make_float3(-ray_dire_x, -ray_dire_y, 0.f);
-                        const float plane_D = m_geo.SID - m_geo.SDD;
-                        float3 hits = make_float3(0.f, 0.f, 0.f);
+                        //float3 src = make_float3(sx, sy, sz);
+                        //float3 plane_norm = make_float3(-ray_dire_x, -ray_dire_y, 0.f);
+                        //const float plane_D = m_geo.SID - m_geo.SDD;
+                        //float3 hits = make_float3(0.f, 0.f, 0.f);
 
                         int det_offset = iview * det_offset_per_view;
                         int vox_offset = iz * m_geo.ny * m_geo.nx;
@@ -191,14 +97,29 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
                             for (int ix = 0; ix < m_geo.nx; ix++) {
                                 float x_pos = (-0.5 * m_geo.nx + 0.5 + ix) * m_geo.dx;
 
-                                float u, v, den;
-                                if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
-                                    m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
-                                    m_geo.nDetU, m_geo.nDetV, u, v, den)) continue;
-                                
-                                const float q = BilinearInterp(proj.data()+det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
-                                const float w = (m_geo.SID * m_geo.SID) / (den * den);
-                                vol[vox_offset + iy * m_geo.nx + ix] += 0.5f * w * q * std::fabs(m_geo.angleStep);
+                                if (scan_type == 0)
+                                {
+                                    float u, v, den;
+                                    if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
+                                        m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
+                                        m_geo.nDetU, m_geo.nDetV, u, v, den)) continue;
+
+                                    const float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
+                                    const float w = (m_geo.SID * m_geo.SID) / (den * den);
+                                    vol[vox_offset + iy * m_geo.nx + ix] += 0.5f * w * q * std::fabs(m_geo.angleStep);
+                                }
+                                else if (scan_type == 1) {
+                                    float u = 0.0f;
+                                    float v = 0.0f;
+                                    float horizontal_distance_sq = 0.0f;
+                                    if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
+                                        m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
+                                        m_geo.nDetU, m_geo.nDetV, u, v, horizontal_distance_sq)) continue;
+                                    float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
+                                    vol[vox_offset + iy * m_geo.nx + ix] += 0.5f* q / horizontal_distance_sq * std::fabs(m_geo.angleStep);
+                                }
+
+
 
                                 ///////  the code below also gives the right algorithm  ///////
                                 //float3 V = make_float3(x_pos, y_pos, z_pos);
@@ -221,6 +142,114 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
         
     }
     for (auto& t : workers) {
+        if (t.joinable())
+            t.join();
+    }
+}
+
+void CpuFDKRecon::ParallelPreprocessProj(std::vector<float>& filter_geom_filted, const std::vector<float>& filter) const
+{
+    unsigned int max_thread_num = std::thread::hardware_concurrency();
+    std::cout << "maximum thread number: " << max_thread_num << std::endl;
+    const int total_view = m_geo.nViews;
+    if (total_view <= 0 || max_thread_num <= 0)
+    {
+        std::cout << "m_geo.nViews: " << total_view << ", thread num invalid" << std::endl;
+        return;
+    }
+
+    unsigned int thread_cnt = std::min(max_thread_num, (unsigned int)total_view);
+    thread_cnt = std::max(thread_cnt, 1U);
+
+    std::vector<std::thread> workers;
+    workers.reserve(thread_cnt);
+
+    int block = total_view / thread_cnt;
+    int remain = total_view % thread_cnt;
+
+    for (unsigned int tid = 0; tid < thread_cnt; tid++)
+    {
+        int start = tid * block + (int)fmin(tid, remain);
+        int end = start + block + (tid < remain ? 1 : 0);
+        //printf("start, end: %d %d\n", start, end);
+
+        workers.emplace_back([this, &filter_geom_filted, &filter, start, end]()
+            {
+                const int SDD = m_geo.SDD;
+                const int SID = m_geo.SID;
+                const int nDetU = m_geo.nDetU;
+                const int nDetV = m_geo.nDetV;
+                const float du = m_geo.du;
+                const float dv = m_geo.dv;
+
+                const float D = static_cast<float>(SDD);
+                const float D2 = D * D;
+                const float u_len = du * nDetU;
+                const float v_len = dv * nDetV;
+
+                const int filter_len = static_cast<int>(filter.size());
+                const int half_win = filter_len / 2;
+
+                for (int view = start; view < end; view++)
+                {
+                    for (int iv = 0; iv < nDetV; iv++)
+                    {
+                        // geometry weighted
+                        float v = -0.5f * v_len + (iv + 0.5f) * dv;
+                        for (int iu = 0; iu < nDetU; iu++)
+                        {
+                            float u = -0.5f * u_len + (iu + 0.5f) * du;
+                            int offset = view * nDetV * nDetU + iv * nDetU + iu;
+                            //if (view == 319 && iv == 87) printf("BB %d  %f %f\n", iu, filter_geom_filted[offset], D / std::sqrt(D2 + u * u + v * v));
+                            float tmp;
+                            if (m_geo.scan_type == 0) {
+                                tmp = D / std::sqrt(D2 + u * u + v * v);
+                            }
+                            else if (m_geo.scan_type == 1) {
+                                float gamma = u;
+                                float cos_tau = D / std::sqrt(D2 + v * v);
+                                tmp = std::cos(gamma) * cos_tau * SID;
+                            }
+
+                            //filter_geom_filted[offset] *= (D / std::sqrt(D2 + u * u + v * v));
+                            filter_geom_filted[offset] *= tmp;
+
+                            //if (view == 319 && iv == 87) printf("BB  %f\n", filter_geom_filted[offset]);
+                        }
+
+
+                        // 2. U axis conv filter
+                        const int base = view * nDetV * nDetU + iv * nDetU;
+                        std::vector<float> temp_u(nDetU, 0.f);
+                        for (int iu = 0; iu < nDetU; iu++)
+                        {
+                            float sum_conv = 0.f;
+                            for (int iu1 = 0; iu1 < filter_len; iu1++)
+                            {
+                                int iu_shift = iu - half_win + iu1;
+                                if (iu_shift >= 0 && iu_shift < nDetU)
+                                {
+                                    int pix_idx = base + iu_shift;
+                                    sum_conv += filter[iu1] * filter_geom_filted[pix_idx];
+                                }
+                            }
+                            temp_u[iu] = sum_conv;
+
+                            //if (view == 319 && iv == 87) printf("AA  %f\n", sum_conv);
+                        }
+                        // write back the results
+                        for (int iu = 0; iu < nDetU; iu++)
+                        {
+                            filter_geom_filted[base + iu] = temp_u[iu] * m_geo.du;
+                        }
+                    }
+                }
+            });
+    }
+
+    // wait till all the thread done
+    for (auto& t : workers)
+    {
         if (t.joinable())
             t.join();
     }

@@ -180,3 +180,50 @@ CUDA_HOST_DEV inline bool VoxelToFlatDetectorUV(
     source_to_voxel_radial = den;
     return true;
 }
+
+CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
+    float x, float y, float z,
+    float beta, float source_z,
+    float SID, float SDD,
+    float dgamma, float dv,
+    int nDetU, int nDetV,
+    float& u_index,
+    float& v_index,
+    float& source_to_voxel_xy_sq
+)
+{
+    const float c = cosf(beta);
+    const float s = sinf(beta);
+    /*
+     * 当前坐标约定与原来的平板函数一致：
+     *
+     * e_w = (-cos(beta), -sin(beta), 0)
+     *       中心射线方向
+     *
+     * e_u = ( sin(beta), -cos(beta), 0)
+     *       探测器水平方向
+     */
+
+     // 源到体素在中心射线方向上的分量
+    const float den = SID - x * c - y * s;
+
+    if (den <= 1.0e-6f)
+        return false;
+
+    const float transverse =x * s - y * c;
+
+    const float L2 =den * den +transverse * transverse;
+
+    if (L2 <= 1.0e-12f)
+        return false;
+    const float L = sqrtf(L2);
+    const float gamma = atan2f(transverse, den);
+
+    const float v_detector =SDD * (z - source_z) / L;
+    const float center_u =0.5f *static_cast<float>(nDetU) - 0.5f;
+    const float center_v =0.5f *static_cast<float>(nDetV) -0.5f;
+    u_index = gamma / dgamma +center_u;
+    v_index = v_detector / dv +center_v;
+    source_to_voxel_xy_sq = L2;
+    return true;
+}

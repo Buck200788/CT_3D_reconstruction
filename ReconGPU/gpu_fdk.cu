@@ -21,6 +21,8 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
 
     const int n_vox_per_slice = geo.nx * geo.ny;
 
+    const int scan_type = geo.scan_type;
+
     int z_idx = idx / n_vox_per_slice;
     int y_idx = idx % n_vox_per_slice /geo.nx;
     int x_idx = idx % n_vox_per_slice % geo.nx;
@@ -41,20 +43,34 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
         float sy = geo.SID * ray_dire_y;
         float sz = iview * dz_per_view + geo.zStart;
 
-        float3 src = make_float3(sx, sy, sz);
-        float3 plane_norm = make_float3(-ray_dire_x, -ray_dire_y, 0.f);
-        const float plane_D = geo.SID - geo.SDD;
-        float3 hits = make_float3(0.f, 0.f, 0.f);
+        //float3 src = make_float3(sx, sy, sz);
+        //float3 plane_norm = make_float3(-ray_dire_x, -ray_dire_y, 0.f);
+        //const float plane_D = geo.SID - geo.SDD;
+        //float3 hits = make_float3(0.f, 0.f, 0.f);
 
         int det_offset = iview * det_offset_per_view;
-
-        float u, v, den;
-        if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
-            geo.SID, geo.SDD, geo.du, geo.dv,
-            geo.nDetU, geo.nDetV, u, v, den)) continue;
-        const float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
-        const float w = (geo.SID * geo.SID) / (den * den);
-        dVol[idx] += 0.5f * w * q * std::fabs(geo.angleStep);
+        if (scan_type == 0)
+        {
+            float u, v, den;
+            if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
+                geo.SID, geo.SDD, geo.du, geo.dv,
+                geo.nDetU, geo.nDetV, u, v, den)) continue;
+            const float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
+            const float w = (geo.SID * geo.SID) / (den * den);
+            dVol[idx] += 0.5f * w * q * std::fabs(geo.angleStep);
+        }
+        else if (scan_type == 1)
+        {
+            float u = 0.0f;
+            float v = 0.0f;
+            float horizontal_distance_sq = 0.0f;
+            if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
+                geo.SID, geo.SDD, geo.du, geo.dv,
+                geo.nDetU, geo.nDetV, u, v, horizontal_distance_sq)) continue;
+            float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
+            dVol[idx] += 0.5f * q / horizontal_distance_sq * std::fabs(geo.angleStep);
+        }
+        
     }
 }
 
@@ -70,14 +86,23 @@ __global__ void proj_geom_filted(const float* dProj, float* d_proj_geom_filtered
     float u_len = du * nDetU;
     float v_len = dv * nDetV;
     float D = geo.SDD;
+    float SO = geo.SID;
 
     int idx_per_view = idx % (nDetU * nDetV);
     int iu = idx_per_view % nDetU;
     int iv = idx_per_view / nDetU;
     float u = -0.5f * u_len + (iu + 0.5f) * du;
     float v = -0.5f * v_len + (iv + 0.5f) * dv;
-    float weight = D / sqrt(D*D + u * u + v * v);
-    d_proj_geom_filtered[idx] = dProj[idx] *weight;
+    if (geo.scan_type == 0) {
+        float weight = D / sqrt(D * D + u * u + v * v);
+        d_proj_geom_filtered[idx] = dProj[idx] * weight;
+    }
+    else if (geo.scan_type == 1) {
+        float gamma = u;
+        float cos_tau = D / std::sqrt(D*D + v * v);
+        d_proj_geom_filtered[idx] = dProj[idx]* cos(gamma) * cos_tau * SO;
+    }
+    
 }
 
 __global__ void proj_filtered(float* d_proj, const float* d_proj_geom_filtered, const float* d_filter, int filter_len, CTGeometry geo)
