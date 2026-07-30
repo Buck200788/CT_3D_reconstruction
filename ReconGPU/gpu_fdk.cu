@@ -264,8 +264,11 @@ void GpuFDKRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>
     if (cuda_status != cudaSuccess) { printf("cuda malloc d_vox failed!!!"); return; }
 
     backProjection(d_proj, d_vox);
+
+    cuda_status = cudaGetLastError();
+    if (cuda_status != cudaSuccess) { printf("recon failed!!!  %d\n", cuda_status); return; }
     cuda_status=cudaMemcpy(vol.data(), d_vox, vSize*sizeof(float), cudaMemcpyDeviceToHost);
-    if (cuda_status != cudaSuccess) { printf("cuda memcpy vox failed!!!"); return; }
+    if (cuda_status != cudaSuccess) { printf("cuda memcpy vox failed!!!  %d\n", cuda_status); return; }
 
     cuda_status=cudaFree(d_proj);
     if (cuda_status != cudaSuccess) { printf("cuda free d_proj failed!!!"); return; }
@@ -286,4 +289,5 @@ void GpuFDKRecon::backProjection(float* dProj, float* dVol)
     dim3 block(blockSize, 1, 1);
     dim3 grid((vSize + blockSize - 1) / blockSize, 1, 1);
     FDKKernel<<<grid, block>>>(dProj, dVol, m_geo);
+    cudaDeviceSynchronize();
 }

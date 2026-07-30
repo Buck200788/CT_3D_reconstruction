@@ -73,19 +73,19 @@ int main()
     geo.nDetU = 512;
     geo.nDetV = 12;
     geo.du = 0.002569f; // d_angle
-    geo.dv = 5.6f; // d_det
+    geo.dv = 10.0f; // d_det
     geo.SDD = 1180.f;
     geo.SID = 710.;
-    geo.pitch = 120.f;
-    geo.nViews = 5040;
+    geo.pitch = -120.f;
+    geo.nViews = 4320;
     geo.angleStep = 0.5f / 180.f * std::acosf(-1.f);
-    geo.nx = 256;
-    geo.ny = 256;
-    geo.nz = 256;
-    geo.dx = 2.f;
-    geo.dy = 2.f;
-    geo.dz = 1.5f;
-    geo.zStart = -350.f;
+    geo.nx = 512;
+    geo.ny = 512;
+    geo.nz = 700;
+    geo.dx = 1.f;
+    geo.dy = 1.f;
+    geo.dz = 1.f;
+    geo.zStart = 350.f;
     geo.scan_type = 1;
 
     rec_p.filter_name = "ram-lak";
@@ -98,7 +98,7 @@ int main()
     auto t0 = high_resolution_clock::now();
 
     //std::ifstream ins("D:\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
-    std::ifstream ins("D:\\bag_interp_1_6144x5040.raw", std::ios::binary | std::ios::in);
+    std::ifstream ins("D:\\bag_interp_3_6144x4320.raw", std::ios::binary | std::ios::in);
     if (ins.is_open()) {
         ins.read(reinterpret_cast<char*>(proj.data()), sizeof(float) * proj.size());
         ins.close();
@@ -114,7 +114,7 @@ int main()
     HMODULE hDll = nullptr;
     PFN_Destroy fnDel = nullptr;
 
-    if (HasAvailableCudaDevice())
+    if (false&& HasAvailableCudaDevice())
     {
         std::cout << "Try GPU mode\n";
         hDll = LoadLibraryA("ReconGPU.dll");
