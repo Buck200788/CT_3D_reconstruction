@@ -49,56 +49,57 @@ int main()
     CTGeometry geo;
     recon_para rec_p;
 
+    geo.nDetU = 512;
+    geo.nDetV = 128;
+    geo.du = 1.0f;
+    geo.dv = 1.0f;
+    geo.SDD = 1000.f;
+    geo.SID = 500.f;
+    geo.pitch = 36.f;
+    geo.nViews = 1600;
+    geo.angleStep = 1.f / 180.f * std::acosf(-1.f);
+    geo.nx = 256;
+    geo.ny = 256;
+    geo.nz = 128;
+    geo.dx = 1.f;
+    geo.dy = 1.f;
+    geo.dz = 1.f;
+    geo.zStart = -80.f;
+    geo.scan_type = 0;
+    
+    rec_p.filter_name = "ram-lak";
+    rec_p.cuda_device = 0;
+
     //geo.nDetU = 512;
-    //geo.nDetV = 128;
-    //geo.du = 1.0f;
-    //geo.dv = 1.0f;
-    //geo.SDD = 1000.f;
-    //geo.SID = 500.f;
-    //geo.pitch = 36.f;
-    //geo.nViews = 1600;
-    //geo.angleStep = 1.f / 180.f * std::acosf(-1.f);
-    //geo.nx = 256;
-    //geo.ny = 256;
-    //geo.nz = 128;
+    //geo.nDetV = 12;
+    //geo.du = 0.002569f; // d_angle
+    //geo.dv = 5.6f; // d_det
+    //geo.SDD = 1180.f;
+    //geo.SID = 710.;
+    //geo.pitch = -120.f;
+    //geo.nViews = 5040;
+    //geo.angleStep = 0.5f / 180.f * std::acosf(-1.f);
+    //geo.nx = 512;
+    //geo.ny = 512;
+    //geo.nz = 700;
     //geo.dx = 1.f;
     //geo.dy = 1.f;
-    //geo.dz = 1.f;
-    //geo.zStart = -80.f;
-    //geo.scan_type = 0;
+    //geo.dz = 1.0f;
+    //geo.zStart = 350.f;
+    //geo.scan_type = 1;
     //
     //rec_p.filter_name = "ram-lak";
     //rec_p.cuda_device = 0;
 
-    geo.nDetU = 512;
-    geo.nDetV = 12;
-    geo.du = 0.002569f; // d_angle
-    geo.dv = 5.6f; // d_det
-    geo.SDD = 1180.f;
-    geo.SID = 710.;
-    geo.pitch = 120.f;
-    geo.nViews = 5040;
-    geo.angleStep = 0.5f / 180.f * std::acosf(-1.f);
-    geo.nx = 256;
-    geo.ny = 256;
-    geo.nz = 256;
-    geo.dx = 2.f;
-    geo.dy = 2.f;
-    geo.dz = 1.5f;
-    geo.zStart = -350.f;
-    geo.scan_type = 1;
-
-    rec_p.filter_name = "ram-lak";
-    rec_p.cuda_device = 0;
-
-    ReconAlgorithm algo = ReconAlgorithm::FDK;
+    ReconAlgorithm algo = ReconAlgorithm::Katsevich;
+    //ReconAlgorithm algo = ReconAlgorithm::FDK;
     std::vector<float> proj(geo.nDetU * geo.nDetV * geo.nViews, 1.f);
     std::vector<float> volume(geo.nx * geo.ny * geo.nz, 0.f);
 
     auto t0 = high_resolution_clock::now();
 
-    //std::ifstream ins("D:\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
-    std::ifstream ins("D:\\bag_interp_1_6144x5040.raw", std::ios::binary | std::ios::in);
+    std::ifstream ins("D:\\bagC_512x128x1600.raw", std::ios::binary | std::ios::in);
+    //std::ifstream ins("D:\\bag_interp_1_6144x5040.raw", std::ios::binary | std::ios::in);
     if (ins.is_open()) {
         ins.read(reinterpret_cast<char*>(proj.data()), sizeof(float) * proj.size());
         ins.close();
@@ -114,7 +115,7 @@ int main()
     HMODULE hDll = nullptr;
     PFN_Destroy fnDel = nullptr;
 
-    if (HasAvailableCudaDevice())
+    if (false && HasAvailableCudaDevice())
     {
         std::cout << "Try GPU mode\n";
         hDll = LoadLibraryA("ReconGPU.dll");

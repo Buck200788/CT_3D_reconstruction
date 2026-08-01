@@ -99,7 +99,7 @@ CUDA_HOST_DEV inline void WorldHitToUV(
     // hit相对探测器中心的偏移向量
     float3 delta = hit - Cdet;
     // U轴投影
-    float u_local = (delta.x * sinT - delta.y * cosT);
+    float u_local = -(delta.x * sinT - delta.y * cosT);
     // V轴相对探测器中心Z偏移
     float v_local = delta.z;
     out_u = u_local / du + 0.5f * nDetU - 0.5f;
@@ -172,7 +172,7 @@ CUDA_HOST_DEV inline bool VoxelToFlatDetectorUV(
     if (den <= 1e-6f) return false;
 
     const float magnification = SDD / den;
-    const float u_mm = magnification * (x * s - y * c);
+    const float u_mm = magnification * (-x * s + y * c);
     const float v_mm = magnification * (z - source_z);
 
     u_index = u_mm / du + 0.5f * static_cast<float>(nDetU) - 0.5f;
@@ -210,7 +210,7 @@ CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
     if (den <= 1.0e-6f)
         return false;
 
-    const float transverse =x * s - y * c;
+    const float transverse = -x * s + y * c;
 
     const float L2 =den * den +transverse * transverse;
 
