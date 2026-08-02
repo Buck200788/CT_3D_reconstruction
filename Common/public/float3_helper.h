@@ -227,3 +227,4 @@ CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
     source_to_voxel_xy_sq = L2;
     return true;
 }
+
