@@ -6,6 +6,30 @@ public:
     explicit GpuKatsevichRecon(const CTGeometry& geo, const recon_para& recp);
     void Reconstruct(const std::vector<float>& proj, std::vector<float>& vol) override;
 private:
-    void FilterKernel(float* dProj);
-    void BackProjKernel(float* dProj, float* dVol);
+    bool FilterKernel(float* dProj);
+    bool BackProjKernel(float* dProj, float* dVol);
+
+    float PsiOverTanPsi(float psi);
+    void calculate_kLines();
+    void construct_hilbert_kernel();
+
+    void cleanup();
+
+    int m_nPsi = 0;
+    float m_psiMin = 0.0f;
+    float m_dPsi = 0.0f;
+    std::vector<float> m_k_lines;
+    std::vector<float> m_inverse_Psi_index;
+    std::vector<float> m_hilbert_kernel;
+
+    float* d_k_lines = nullptr;
+    float* d_inverse_Psi_index = nullptr;
+    float* d_hilbert_kernel = nullptr;
+
+    float* d_proj = nullptr;
+    float* d_G1 = nullptr;
+    float* d_G2 = nullptr;
+    float* d_G3 = nullptr;
+    float* d_filtedProj = nullptr;
+    float* d_vol = nullptr;
 };
