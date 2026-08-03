@@ -19,6 +19,117 @@ float CpuKatsevichRecon::PsiOverTanPsi(float psi)
     return psi / std::tan(psi);
 }
 
+void CpuKatsevichRecon::calculate_kLines_equal_angle()
+{
+    const float D = m_geo.SDD;
+    const float P = m_geo.pitch;
+    const float R = m_geo.SID;
+    const float PI = std::acos(-1.f);
+    const float dAlpha = m_geo.du;
+    const int nAlpha = m_geo.nDetU;
+    const float dw = m_geo.dv;
+    const int nDetV = m_geo.nDetV;
+    const float alpha_center= 0.5f * static_cast<float>(nAlpha - 1);
+    const float w_center= 0.5f * static_cast<float>(nDetV - 1);
+
+    float alphaM = 0.5 * nAlpha * dAlpha;
+    const float psiMax = 0.5 * PI + alphaM;
+    const float psiMin = -1.f* psiMax;
+    float alpha_edge = -alphaM;
+
+    const float sin_psi = std::sin(psiMax);
+    const float cos_psi = std::cos(psiMax);
+    const float cot_psi = cos_psi / sin_psi;
+    const float csc2_psi = 1.0f / (sin_psi * sin_psi);
+    const float kappa_scale = D * P / (2.0f * PI * R);
+    const float q_prime =cot_psi - psiMax * csc2_psi;
+
+    const float max_dwdpsi = std::fabs(kappa_scale * (std::cos(alpha_edge) + std::sin(alpha_edge) * q_prime));
+    const float A = 0.5f * PI + alphaM;
+    int M = static_cast<int>(std::ceil(A * max_dwdpsi / dw));
+    M = std::max(M, 1);
+    const int nPsi = 2 * M + 1;
+    const float dPsi = A / static_cast<float>(M);
+
+    m_nPsi = nPsi;
+    m_psiMin = psiMin;
+    m_dPsi = dPsi;
+
+    m_k_lines.assign(nPsi*nAlpha, 0.f);
+
+    std::vector<float> sinAlpha(nAlpha);
+    std::vector<float> cosAlpha(nAlpha);
+
+    for (int ia = 0; ia < nAlpha; ++ia)
+    {
+        const float alpha = (static_cast<float>(ia) - alpha_center) * dAlpha;
+        sinAlpha[ia] = std::sin(alpha);
+        cosAlpha[ia] = std::cos(alpha);
+    }
+
+    for (int ipsi = 0; ipsi < nPsi; ipsi++) {
+        const float psi = psiMin + ipsi * dPsi;
+        const float q = PsiOverTanPsi(psi);
+        for (int ialpha = 0; ialpha < nAlpha; ialpha++) {
+            const float alpha = (static_cast<float>(ialpha) - alpha_center) * dAlpha;
+            const float w_kappa = kappa_scale * (psi * cosAlpha[ialpha] + q * sinAlpha[ialpha]);
+            const float w_index =w_kappa / dw + w_center;
+            m_k_lines[static_cast<size_t>(ipsi) * nAlpha + ialpha] = w_index;
+        }
+    }
+
+}
+
+void CpuKatsevichRecon::calculate_inverse_Psi_index()
+{
+    const int nPsi = m_nPsi;
+    const float dPsi = m_dPsi;
+    const float psi_min = m_psiMin;
+    const int nDetU = m_geo.nDetU;
+    const int nDetV = m_geo.nDetV;
+
+    m_inverse_Psi_index.assign(m_geo.nDetV * m_geo.nDetU, -1.f);
+
+    for (int iu = 0; iu < nDetU; ++iu)
+    {
+        for (int iv = 0; iv < nDetV; ++iv)
+        {
+            const float target_v = static_cast<float>(iv);
+            const int inverse_index = iv * nDetU + iu;
+            float best_psi_index = -1.f;
+            float best_abs_psi = std::numeric_limits<float>::infinity();
+            for (int ipsi = 0; ipsi < nPsi - 1; ++ipsi)
+            {
+                int offset = ipsi * nDetU;
+                float v0 = m_k_lines[offset + iu];
+                float v1 = m_k_lines[offset + nDetU + iu];
+
+                const float lower = std::min(v0, v1);
+                const float upper = std::max(v0, v1);
+
+                if (target_v < lower || target_v > upper)
+                    continue;
+
+                const float denominator = v1 - v0;
+
+                if (std::fabs(denominator) < 1.0e-12f)
+                    continue;
+
+                const float t = (target_v - v0) / denominator;
+                const float p = static_cast<float>(ipsi) + t;
+                const float psi = psi_min + p * dPsi;
+                const float abs_psi = std::fabs(psi);
+                if (abs_psi < best_abs_psi)
+                {
+                    best_abs_psi = abs_psi;
+                    best_psi_index = p;
+                }
+            }
+            m_inverse_Psi_index[inverse_index] = best_psi_index;
+        }
+    }
+}
+
 void CpuKatsevichRecon::calculate_kLines()
 {
     const float D = m_geo.SDD;
@@ -61,7 +172,6 @@ void CpuKatsevichRecon::calculate_kLines()
     const float dPsi = (psi_max - psi_min) / static_cast<float>(nPsi - 1);
 
     m_k_lines.assign(nPsi * m_geo.nDetU, 0);
-    m_inverse_Psi_index.assign(m_geo.nDetV * m_geo.nDetU, -1.f);
 
     const float u_center = 0.5f * (m_geo.nDetU - 1);
     const float v_center = 0.5f * (m_geo.nDetV - 1);
@@ -78,48 +188,6 @@ void CpuKatsevichRecon::calculate_kLines()
     m_nPsi = nPsi;
     m_psiMin = psi_min;
     m_dPsi = dPsi;
-
-    const int nDetU = m_geo.nDetU;
-    const int nDetV = m_geo.nDetV;
-
-    for (int iu = 0; iu < nDetU; ++iu)
-    {
-        for (int iv = 0; iv < nDetV; ++iv)
-        {
-            const float target_v =static_cast<float>(iv);
-            const int inverse_index =iv * nDetU + iu;
-            float best_psi_index = -1.f;
-            float best_abs_psi = std::numeric_limits<float>::infinity();
-            for (int ipsi = 0; ipsi < nPsi - 1; ++ipsi)
-            {
-                int offset = ipsi * nDetU;
-                float v0 = m_k_lines[offset+iu];
-                float v1 = m_k_lines[offset+nDetU+iu];
-
-                const float lower = std::min(v0, v1);
-                const float upper = std::max(v0, v1);
-
-                if (target_v < lower || target_v > upper)
-                    continue;
-
-                const float denominator = v1 - v0;
-
-                if (std::fabs(denominator) < 1.0e-12f)
-                    continue;
-
-                const float t = (target_v - v0) / denominator;
-                const float p = static_cast<float>(ipsi) + t;
-                const float psi = psi_min + p * dPsi;
-                const float abs_psi = std::fabs(psi);
-                if (abs_psi < best_abs_psi)
-                {
-                    best_abs_psi = abs_psi;
-                    best_psi_index = p;
-                }
-            }
-            m_inverse_Psi_index[inverse_index] = best_psi_index;
-        }
-    }
 }
 
 void CpuKatsevichRecon::construct_hilbert_kernel()
@@ -142,7 +210,12 @@ void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
     int size = m_geo.nx * m_geo.ny * m_geo.nz;
     vol.assign(size, 0.f);
     std::vector<float> filt = proj;
-    calculate_kLines();
+    if (m_geo.scan_type == 0)
+        calculate_kLines();
+    else if (m_geo.scan_type == 1)
+        calculate_kLines_equal_angle();
+    calculate_inverse_Psi_index();
+
     construct_hilbert_kernel();
     FilterProj(proj, filt);
     BackProject(filt, vol);
