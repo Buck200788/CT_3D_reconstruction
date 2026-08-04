@@ -71,19 +71,13 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
     }
 
     const double pi = std::acos(-1.0);
-
     const int order = nextpow2(2 * len);
     const int halfLen = order / 2 + 1;
-
     // 当前采用奇数长度核
     const int fftLength =  2 * halfLen - 1;
-
     filt.assign(fftLength, 0.0f);
-
     std::vector<float> halfKernel(halfLen, 0.0f);
-
     halfKernel[0] = static_cast<float>( 0.25 / (spacing * spacing));
-
     for (int i = 1; i < halfLen; i += 2)
     {
         double value = 0.0;
@@ -113,27 +107,32 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
 
     // 空间核的循环排列
     std::copy( halfKernel.begin(),halfKernel.end(),filt.begin());
-
     for (int i = halfLen; i < fftLength; ++i)
     {
         filt[i] = halfKernel[2 * halfLen - 1 - i];
     }
 
-    std::vector<double> spatial(filt.begin(), filt.end());
+    window_filter(filt, filter, cutoffRatio);
+}
 
+void Filter::window_filter(std::vector<float>& filt, FilterType filter, double cutoffRatio)
+{
+    const int fftLength = filt.size();
+    const int halfLen = fftLength / 2 + 1;
+    const double pi = std::acos(-1.0);
+
+    std::vector<double> spatial(filt.begin(), filt.end());
     FFT1D fftSolver;
     auto spectrum = fftSolver.fft(spatial, false);
-
-    std::vector<float> halfSpectrum( halfLen, 0.0f );
-
+    std::vector<float> halfSpectrum(halfLen, 0.0f);
     for (int i = 0; i < halfLen; ++i)
     {
         // 这里的 2 是否保留，取决于反投影归一化
-        halfSpectrum[i] =2.0f * static_cast<float>(spectrum[i].real());
+        halfSpectrum[i] = 2.0f * static_cast<float>(spectrum[i].real());
     }
     for (int i = 1; i < halfLen; ++i)
     {
-        const double normalizedFreq =  2.0 * i /(cutoffRatio * fftLength);
+        const double normalizedFreq = 2.0 * i / (cutoffRatio * fftLength);
         if (normalizedFreq > 1.0)
         {
             halfSpectrum[i] = 0.0f;
@@ -148,17 +147,17 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
         case FilterType::SheppLogan:
         {
             const double x = 0.5 * pi * normalizedFreq;
-            win = std::abs(x) < 1.0e-12? 1.0f: static_cast<float>(std::sin(x) / x);
+            win = std::abs(x) < 1.0e-12 ? 1.0f : static_cast<float>(std::sin(x) / x);
             break;
         }
         case FilterType::Cosine:
-            win = static_cast<float>(std::cos( 0.5 * pi * normalizedFreq ));
+            win = static_cast<float>(std::cos(0.5 * pi * normalizedFreq));
             break;
         case FilterType::Hamming:
-            win = static_cast<float>( 0.54 + 0.46 * std::cos(pi * normalizedFreq ) );
+            win = static_cast<float>(0.54 + 0.46 * std::cos(pi * normalizedFreq));
             break;
         case FilterType::Hann:
-            win = static_cast<float>( 0.5 + 0.5 * std::cos( pi * normalizedFreq ));
+            win = static_cast<float>(0.5 + 0.5 * std::cos(pi * normalizedFreq));
             break;
         default:
             win = 1.0f;
@@ -167,18 +166,18 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
         halfSpectrum[i] *= win;
     }
     // 恢复完整实对称频谱
-    std::copy(halfSpectrum.begin(),halfSpectrum.end(),filt.begin());
-    for (int k = halfLen;k < fftLength; ++k)
+    std::copy(halfSpectrum.begin(), halfSpectrum.end(), filt.begin());
+    for (int k = halfLen; k < fftLength; ++k)
     {
         filt[k] = halfSpectrum[2 * halfLen - 1 - k];
     }
-    std::vector<double> windowedSpectrum(filt.begin(), filt.end() );
-    auto spatialResult =fftSolver.ifft(windowedSpectrum,false );
+    std::vector<double> windowedSpectrum(filt.begin(), filt.end());
+    auto spatialResult = fftSolver.ifft(windowedSpectrum, false);
     const int centerShift = halfLen;
 
     for (int i = 0; i < fftLength; ++i)
     {
-        const int idx = (i + centerShift) %fftLength;
-        filt[i] = static_cast<float>(spatialResult[idx].real() );
+        const int idx = (i + centerShift) % fftLength;
+        filt[i] = static_cast<float>(spatialResult[idx].real());
     }
 }

@@ -47,4 +47,5 @@ public:
     const std::vector<float>& GetFilter() const { return filt; }
     const float* Data() const { return filt.data(); }
     size_t Size() const { return filt.size(); }
+    void window_filter(std::vector<float>& filt, FilterType filter, double cutoffRatio = 1.0);
 };

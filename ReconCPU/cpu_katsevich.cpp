@@ -198,11 +198,15 @@ void CpuKatsevichRecon::construct_hilbert_kernel()
     int kernel_len = m_geo.nDetU * 2 - 1;
     m_hilbert_kernel.assign(kernel_len, 0.f);
     for (size_t i = m_geo.nDetU; i < kernel_len; i+=2) {
-        m_hilbert_kernel[i] = twoOverPI / (i - m_geo.nDetU + 1) / m_geo.du;
+        if(m_geo.scan_type==0)
+            m_hilbert_kernel[i] = twoOverPI / (i - m_geo.nDetU + 1) / m_geo.du;
+        else if(m_geo.scan_type==1)
+            m_hilbert_kernel[i] = twoOverPI / std::sin((i - m_geo.nDetU + 1) * m_geo.du);
         if (i > m_geo.nDetU - 1) {
             m_hilbert_kernel[kernel_len - 1 - i] = -m_hilbert_kernel[i];
         }
     }
+    
 }
 
 void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
@@ -215,7 +219,6 @@ void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
     else if (m_geo.scan_type == 1)
         calculate_kLines_equal_angle();
     calculate_inverse_Psi_index();
-
     construct_hilbert_kernel();
     FilterProj(proj, filt);
     BackProject(filt, vol);
