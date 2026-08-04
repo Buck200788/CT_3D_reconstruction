@@ -112,9 +112,10 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
                                     float u = 0.0f;
                                     float v = 0.0f;
                                     float horizontal_distance_sq = 0.0f;
+                                    float den;
                                     if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                                         m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
-                                        m_geo.nDetU, m_geo.nDetV, u, v, horizontal_distance_sq)) continue;
+                                        m_geo.nDetU, m_geo.nDetV, u, v, horizontal_distance_sq,den)) continue;
                                     float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
                                     vol[vox_offset + iy * m_geo.nx + ix] += 0.5f* q / horizontal_distance_sq * std::fabs(m_geo.angleStep);
                                 }

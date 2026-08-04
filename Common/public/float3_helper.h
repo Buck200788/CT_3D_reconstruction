@@ -189,7 +189,8 @@ CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
     int nDetU, int nDetV,
     float& u_index,
     float& v_index,
-    float& source_to_voxel_xy_sq
+    float& source_to_voxel_xy_sq,
+    float& radial_den
 )
 {
     const float c = cosf(beta);
@@ -200,7 +201,7 @@ CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
      * e_w = (-cos(beta), -sin(beta), 0)
      *       中心射线方向
      *
-     * e_u = ( sin(beta), -cos(beta), 0)
+     * e_u = ( -sin(beta), cos(beta), 0)
      *       探测器水平方向
      */
 
@@ -225,6 +226,7 @@ CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
     u_index = gamma / dgamma +center_u;
     v_index = v_detector / dv +center_v;
     source_to_voxel_xy_sq = L2;
+    radial_den = den;
     return true;
 }
 

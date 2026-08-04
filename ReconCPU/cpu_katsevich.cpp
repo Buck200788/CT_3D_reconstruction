@@ -6,6 +6,11 @@
 #include <algorithm>
 #include <limits>
 #include <iostream>
+
+#include <atomic>
+#include <chrono>
+#include <mutex>
+
 CpuKatsevichRecon::CpuKatsevichRecon(const CTGeometry& geo, const recon_para& recp) : BaseRecon(geo, recp) {}
 
 float CpuKatsevichRecon::PsiOverTanPsi(float psi)
@@ -218,10 +223,15 @@ void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
         calculate_kLines();
     else if (m_geo.scan_type == 1)
         calculate_kLines_equal_angle();
+    printf("calculating the Klines done\n");
     calculate_inverse_Psi_index();
+    printf("calculating inverse Klines done\n");
     construct_hilbert_kernel();
+    printf("calculating Hilbert kernel done\n");
     FilterProj(proj, filt);
+    printf("pre-filter done, starting back projection\n");
     BackProject(filt, vol);
+    printf("projection done\n");
 }
 
 void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<float>& out)
@@ -238,6 +248,7 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
     unsigned int valid_views = (unsigned int)this->m_geo.nViews - 2;
     unsigned int thread_cnt = std::min(max_thread_num, valid_views);
     thread_cnt = std::max(thread_cnt, 1U);
+    printf("filter process using thread num: %d\n", thread_cnt);
     std::vector<std::thread> workers;
     workers.reserve(thread_cnt);
     int block = valid_views / thread_cnt;
@@ -269,6 +280,15 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
             std::vector<float>G1(view_offset, 0.f);
             std::vector<float>G2(nPsi * nDetU, 0.f);
             std::vector<float>G3(nPsi * nDetU, 0.f);
+
+            std::vector<float>cosAlpha(nDetU, 1.f);
+            if (m_geo.scan_type == 1) {
+                for (int iu = 0; iu < nDetU; ++iu)
+                {
+                    const float alpha = (static_cast<float>(iu) - u_center) * du;
+                    cosAlpha[iu] = std::cos(alpha);
+                }
+            }
             
             for (int view = start; view < end; view++)
             {
@@ -284,8 +304,15 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
                         float dgDv = (in[current_view_offset + current_v_offset + nDetU + iu] - in[current_view_offset + current_v_offset - nDetU + iu]) * inv2Dv;
                         float dgDu = (in[current_view_offset + current_v_offset + iu + 1] - in[current_view_offset + current_v_offset + iu - 1]) * inv2Du;
                         float u = (static_cast<float>(iu) - u_center) * du;
-                        float g1= dgDbeta + (D2 + u * u) / D * dgDu + (u * v) / D * dgDv;
-                        G1[current_v_offset + iu] = D / std::sqrt(D2 + u * u + v * v) * g1;
+                        if (m_geo.scan_type == 0) {
+                            float g1 = dgDbeta + (D2 + u * u) / D * dgDu + (u * v) / D * dgDv;
+                            G1[current_v_offset + iu] = D / std::sqrt(D2 + u * u + v * v) * g1;
+                        }
+                        else if (m_geo.scan_type == 1) {
+                            float derivative = dgDbeta + dgDu;
+                            G1[current_v_offset + iu] = D / std::sqrt(D2 + v * v) * derivative;
+                        }
+                        
                     }
                 }
 
@@ -341,6 +368,7 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
                         int g20_idx = psi0 * nDetU + iu;
                         int g21_idx = psi1 * nDetU + iu;
                         out[out_index] = (1.f - w1) * G3[g20_idx] + w1 * G3[g21_idx];
+                        if(m_geo.scan_type==1)out[out_index] *= cosAlpha[iu];
                     }
                 }
             }
@@ -382,7 +410,7 @@ bool CpuKatsevichRecon::calculate_PI_line(const float R, const float h, const fl
 
     if (!std::isfinite(f_lo) || !std::isfinite(f_hi)) return false;
     if (f_lo * f_hi > 0) return false;
-    for (size_t i = 0; i < 40; i++) {
+    for (size_t i = 0; i < 30; i++) {
         float mid = 0.5 * (lo + hi);
         float f_mid = evaluate(mid);
         if ((f_mid <= 0 && f_lo >= 0) || (f_mid >= 0 && f_lo <= 0)) {
@@ -413,17 +441,22 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
     unsigned int max_thread_num = std::thread::hardware_concurrency();
     unsigned int thread_cnt = std::min(max_thread_num, (unsigned int)this->m_geo.nz);
     thread_cnt = std::max(thread_cnt, 1U);
-
+    printf("BackProject process using thread num: %d\n", thread_cnt);
     std::vector<std::thread> workers;
     workers.reserve(thread_cnt);
 
     int block = this->m_geo.nz / thread_cnt;
     int remain = this->m_geo.nz % thread_cnt;
+
+    std::atomic<int> finished_slices{ 0 };
+    std::mutex print_mutex;
+    const auto backproject_start =
+        std::chrono::steady_clock::now();
     for (unsigned int tid = 0; tid < thread_cnt; tid++) {
         int start = tid * block + (int)fmin(tid, remain);
         int end = start + block + (tid < remain ? 1 : 0);
 
-        workers.emplace_back([this, &proj, &vol, start, end]()
+        workers.emplace_back([this, &proj, &vol, start, end, &finished_slices, &print_mutex, backproject_start]()
             {
                 const float PI = std::acosf(-1.0f);
                 const float dz_per_view = m_geo.pitch / (2.f * PI / m_geo.angleStep);
@@ -444,6 +477,11 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
                             float index_max = std::max(index_b, index_t);
                             int view_b = static_cast<int>(std::ceil(index_min));
                             int view_t = static_cast<int>(std::floor(index_max));
+                            view_b = std::max(view_b, 1);
+                            view_t = std::min(view_t, m_geo.nViews - 2);
+
+                            if (view_b > view_t)
+                                continue;
                             for (int iview = view_b; iview <= view_t; iview++) {
                                 if (iview < 1 || iview >= m_geo.nViews-1)continue;
                                 float angle = iview * m_geo.angleStep;
@@ -455,24 +493,31 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
                                 float sz = iview * dz_per_view + m_geo.zStart;
                                 int det_offset = iview * det_offset_per_view;
                                 int vox_offset = iz * m_geo.ny * m_geo.nx;
+                                float u, v, den;
                                 if (scan_type == 0)
-                                {
-                                    float u, v, den;
+                                {    
                                     if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                                         m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
-                                        m_geo.nDetU, m_geo.nDetV, u, v, den)) continue;
-
-                                    const float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
-                                    const float w = 1.f / (2.f*PI*den);
-                                    vol[vox_offset + iy * m_geo.nx + ix] += w * q * std::fabs(m_geo.angleStep);
+                                        m_geo.nDetU, m_geo.nDetV, u, v, den)) continue;                                   
                                 }
                                 else if (scan_type == 1) {
-
+                                    float source_to_voxel_xy_sq;
+                                    if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
+                                        m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
+                                        m_geo.nDetU, m_geo.nDetV, u, v, source_to_voxel_xy_sq,den)) continue;
                                 }
+                                const float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
+                                const float w = 1.f / (2.f * PI * den);
+                                vol[vox_offset + iy * m_geo.nx + ix] += w * q * std::fabs(m_geo.angleStep);
                             }
                         }
                     }
+                    const int done = finished_slices.fetch_add(1, std::memory_order_relaxed) + 1;
 
+                    if (done % 5 == 0 || done == m_geo.nz)
+                    {
+                        std::cout << "BackProject progress: " << done << " / " << m_geo.nz << '\n';
+                    }
                 }
             }
         );

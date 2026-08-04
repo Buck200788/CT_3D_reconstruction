@@ -64,9 +64,10 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
             float u = 0.0f;
             float v = 0.0f;
             float horizontal_distance_sq = 0.0f;
+            float den;
             if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                 geo.SID, geo.SDD, geo.du, geo.dv,
-                geo.nDetU, geo.nDetV, u, v, horizontal_distance_sq)) continue;
+                geo.nDetU, geo.nDetV, u, v, horizontal_distance_sq,den)) continue;
             float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
             dVol[idx] += 0.5f * q / horizontal_distance_sq * std::fabs(geo.angleStep);
         }
