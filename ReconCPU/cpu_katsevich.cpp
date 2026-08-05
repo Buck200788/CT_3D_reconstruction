@@ -151,8 +151,20 @@ void CpuKatsevichRecon::calculate_kLines()
         throw std::invalid_argument("Helical pitch must be non-zero");
     }
 
+    const float half_x = 0.5f * m_geo.nx * m_geo.dx;
+    const float half_y = 0.5f * m_geo.ny * m_geo.dy;
+
     const float u_edge = 0.5f * static_cast<float>(m_geo.nDetU) * m_geo.du;
-    const float alpha_m = std::atan(u_edge / D);
+
+    const float fov_radius = std::sqrt(half_x * half_x + half_y * half_y);
+    if (fov_radius >= m_geo.SID)
+        throw std::invalid_argument("FOV exceeds helical radius");
+    const float alpha_fov = std::asin(fov_radius / m_geo.SID);
+    const float alpha_detector = std::atan(u_edge / m_geo.SDD);
+    if (alpha_detector < alpha_fov)        throw std::runtime_error("Detector does not cover reconstruction FOV");
+    const float alpha_m = alpha_fov;
+    
+    //const float alpha_m = std::atan(u_edge / D);
     const float psi_min = -0.5f * PI - alpha_m;
     const float psi_max = 0.5f * PI + alpha_m;
 
@@ -229,7 +241,14 @@ void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
     construct_hilbert_kernel();
     printf("calculating Hilbert kernel done\n");
     FilterProj(proj, filt);
-    printf("pre-filter done, starting back projection\n");
+    printf("pre-filter done, starting build PI LUT\n");
+    
+    std::ofstream outs("D:\\data1_6144x5040.raw",std::ios::binary);
+    outs.write(reinterpret_cast<const char*>(filt.data()), sizeof(float) * filt.size());
+    outs.close();
+    return;
+    build_PI_LUT();
+    printf("bulid pi LUT done, starting backprojection\n");
     BackProject(filt, vol);
     printf("projection done\n");
 }
@@ -310,11 +329,15 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
                         }
                         else if (m_geo.scan_type == 1) {
                             float derivative = dgDbeta + dgDu;
+                            printf("%f %f\n", dgDbeta, dgDu);
                             G1[current_v_offset + iu] = D / std::sqrt(D2 + v * v) * derivative;
                         }
                         
                     }
                 }
+
+                for (int i = 0; i < G1.size(); i++) if(G1[i]!=0) printf("%d, %f\n", i, G1[i]);
+                continue;
 
                 for (int ipsi = 0; ipsi < nPsi; ipsi++) {
                     const int psi_offset = ipsi * nDetU;
@@ -384,6 +407,11 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
 
 bool CpuKatsevichRecon::calculate_PI_line(const float R, const float h, const float z0, float x, float y, float z, float& beta_b, float &belta_t)
 {
+    const float radius2 = x * x + y * y;
+
+    if (radius2 >= R * R)
+        return false;
+
     const float PI = std::acos(-1.f);
     if (std::fabs(h) < 1.0e-12f) {
         throw std::invalid_argument("pitch should not be too small");
@@ -398,6 +426,8 @@ bool CpuKatsevichRecon::calculate_PI_line(const float R, const float h, const fl
         cos_delta = std::clamp(cos_delta, -1.f, 1.f);
         float delta_m = std::acos(cos_delta);
         float sin_delta = std::sin(delta_m);
+        if (std::fabs(sin_delta) < 1.0e-7f)
+            return std::numeric_limits<float>::quiet_NaN();
         float mu = (-x * sin_beta + y * cos_beta) / (R * sin_delta);
         return z0 + h * (beta_m + mu * delta_m) - z;
     };
@@ -413,6 +443,8 @@ bool CpuKatsevichRecon::calculate_PI_line(const float R, const float h, const fl
     for (size_t i = 0; i < 30; i++) {
         float mid = 0.5 * (lo + hi);
         float f_mid = evaluate(mid);
+        if (!std::isfinite(f_mid))
+            return false;
         if ((f_mid <= 0 && f_lo >= 0) || (f_mid >= 0 && f_lo <= 0)) {
             hi = mid;
             f_hi = f_mid;
@@ -432,6 +464,101 @@ bool CpuKatsevichRecon::calculate_PI_line(const float R, const float h, const fl
     beta_b = beta - delta;
     belta_t = beta + delta;
     return true;
+}
+
+void CpuKatsevichRecon::build_PI_LUT()
+{
+    const float PI = std::acos(-1.f);
+
+    const double R = m_geo.SID;
+    const double P = m_geo.pitch;
+    const double h = P / (2.0 * PI);
+
+    int n_PiLines_per_pitch = 2 * std::ceil(std::abs(P) / m_geo.dz);
+    n_PiLines_per_pitch = std::max(n_PiLines_per_pitch, 2);
+    m_nPILines_per_pitch = n_PiLines_per_pitch;
+    const float z_step = P / n_PiLines_per_pitch;
+    unsigned int total_cnt = n_PiLines_per_pitch * m_geo.nx * m_geo.ny;
+    const float invalid =  std::numeric_limits<float>::quiet_NaN();
+    m_pi_LUT.assign(total_cnt*2, invalid);
+
+    unsigned int max_thread_num = std::thread::hardware_concurrency();
+    unsigned int thread_cnt = std::min(max_thread_num, total_cnt);
+    thread_cnt = std::max(thread_cnt, 1U);
+    printf("calculate PI LUT process using thread num: %d\n", thread_cnt);
+    std::vector<std::thread> workers;
+    workers.reserve(thread_cnt);
+    int block = total_cnt / thread_cnt;
+    int remain = total_cnt % thread_cnt;
+    for (unsigned int tid = 0; tid < thread_cnt; tid++) {
+        int start = tid * block + std::min(static_cast<int>(tid), remain);
+        int end = start + block + (tid < remain ? 1 : 0);
+
+        workers.emplace_back([this, n_PiLines_per_pitch, R, h, start, end]()
+            {
+                const int nx = this->m_geo.nx;
+                const int ny = this->m_geo.ny;
+                const float dx = this->m_geo.dx;
+                const float dy = this->m_geo.dy;
+                const int n_per_slice =  nx* ny;
+                const float y_center= (-0.5 * ny + 0.5) * dy;
+                const float x_center= (-0.5 * nx + 0.5) * dx;
+                const float z0 = this->m_geo.zStart;
+                std::vector<float>& pi_LUT = this->m_pi_LUT;
+                const float PI = std::acos(-1.f);
+
+                for (size_t iv = start; iv < end; iv++)
+                {
+                    const int iz = iv / n_per_slice;
+                    const int iy = iv % n_per_slice / nx;
+                    const int ix = iv % n_per_slice % nx;
+                    const double phase = 2*PI * static_cast<double>(iz) / static_cast<double>(n_PiLines_per_pitch);
+                    const float z = z0 + h*phase;
+                    const float y = y_center + iy * dy;
+                    const float x = x_center + ix * dx;
+                    float beta_b, beta_t;
+                    if (!calculate_PI_line(R, h, z0, x,y,z, beta_b, beta_t))
+                        continue;
+                    pi_LUT[iv * 2] = 0.5f * (beta_b + beta_t)- static_cast<float>(phase);
+                    pi_LUT[iv * 2 + 1] = 0.5f * (beta_t - beta_b);
+                }
+            });
+    }
+    for (auto& t : workers) {
+        if (t.joinable())
+            t.join();
+    }
+}
+
+bool CpuKatsevichRecon::calculate_pi(int ix, int iy, float z, float& beta_b, float& beta_t)
+{
+    const float PI = std::acos(-1.f);
+    const float TWO_PI = 2 * PI;
+    const double P = m_geo.pitch;
+    const double h = P / (2.0 * PI);
+    const float z_step = P / m_nPILines_per_pitch;
+    const float z0 = m_geo.zStart;
+    const double beta_z = (static_cast<double>(z) - z0) / h;
+    double phase = beta_z - TWO_PI * std::floor(beta_z / TWO_PI);
+    double idx = phase * m_nPILines_per_pitch / TWO_PI;
+    int i0 = static_cast<int>(std::floor(idx));
+    double t = idx - i0;
+    i0 %= m_nPILines_per_pitch;
+    const int i1 = (i0 + 1) % m_nPILines_per_pitch;
+    
+    const int nx = this->m_geo.nx;
+    const int ny = this->m_geo.ny;
+    const float dx = this->m_geo.dx;
+    const float dy = this->m_geo.dy;
+    const int n_per_slice = nx * ny;
+    int idx_0 = i0 * n_per_slice + iy * nx + ix;
+    int idx_1 = i1 * n_per_slice + iy * nx + ix;
+    const float midRelative = t * m_pi_LUT[2 * idx_1] + (1.f - t) * m_pi_LUT[2 * idx_0];
+    const float delta = t * m_pi_LUT[2 * idx_1 + 1] + (1.f - t) * m_pi_LUT[2 * idx_0 + 1];
+    const float betaMid = static_cast<float>(beta_z) + midRelative;
+    beta_b = betaMid - delta;
+    beta_t = betaMid + delta;
+    return beta_b < beta_t;
 }
 
 void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<float>& vol)
@@ -469,8 +596,9 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
                         for (int ix = 0; ix < m_geo.nx; ix++) {
                             float x_pos = (-0.5 * m_geo.nx + 0.5 + ix) * m_geo.dx;
                             float beta_b, beta_t;
-                            if(!calculate_PI_line(this->m_geo.SID, this->m_geo.pitch/(2.f*PI), this->m_geo.zStart, x_pos, y_pos, z_pos, beta_b, beta_t))
-                                continue;
+                            //if(!calculate_PI_line(this->m_geo.SID, this->m_geo.pitch/(2.f*PI), this->m_geo.zStart, x_pos, y_pos, z_pos, beta_b, beta_t))
+                            //    continue;
+                            if (!calculate_pi(ix, iy, z_pos, beta_b, beta_t))continue;
                             float index_b = beta_b / this->m_geo.angleStep;
                             float index_t = beta_t / this->m_geo.angleStep;
                             float index_min = std::min(index_b, index_t);
@@ -521,7 +649,6 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
                 }
             }
         );
-
     }
     for (auto& t : workers) {
         if (t.joinable())

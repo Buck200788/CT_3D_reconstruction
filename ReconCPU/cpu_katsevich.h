@@ -15,13 +15,16 @@ private:
     void calculate_inverse_Psi_index();
     void construct_hilbert_kernel();
     bool calculate_PI_line(const float R, const float h, const float z0, float x, float y, float z, float& beta_b, float& belta_t);
-    
+    void build_PI_LUT();
+    bool calculate_pi(int ix, int iy, float z, float& beta_b, float& beta_t);
     void calculate_kLines_equal_angle();
 
     int m_nPsi = 0;
     float m_psiMin = 0.0f;
     float m_dPsi = 0.0f;
+    int m_nPILines_per_pitch = 0;
     std::vector<float> m_k_lines;
     std::vector<float> m_inverse_Psi_index;
     std::vector<float> m_hilbert_kernel;
+    std::vector<float> m_pi_LUT;
 };
