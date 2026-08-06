@@ -679,7 +679,7 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
                         }
                     }
                     const int done = finished_slices.fetch_add(1, std::memory_order_relaxed) + 1;
-                    if (done % 5 == 0 || done == m_geo.nz)
+                    if (done % 10 == 0 || done == m_geo.nz)
                     {
                         std::cout << "BackProject progress: " << done << " / " << m_geo.nz << '\n';
                     }

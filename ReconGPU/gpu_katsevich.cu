@@ -75,9 +75,16 @@ __global__ void geom_filter(float* dProj, float* dG1, CTGeometry geo)
     float dgDv = (dProj[v2_index] - dProj[v1_index]) * inv2Dv;
     float dgDu = (dProj[u2_index] - dProj[u1_index]) * inv2Du;
     float u = (static_cast<float>(u_idx) - u_center) * du;
-    float v = (static_cast<float>(v_idx) - v_center) * dv;
-    float g1 = dgDbeta + (D2 + u * u) / D * dgDu + (u * v) / D * dgDv;
-    dG1[idx] = D / std::sqrt(D2 + u * u + v * v) * g1;
+    float v = (static_cast<float>(v_idx) - v_center - geo.detectorVCenterOffsetPix) * dv;
+    if (geo.scan_type == 0)
+    {
+        float g1 = dgDbeta + (D2 + u * u) / D * dgDu + (u * v) / D * dgDv;
+        dG1[idx] = D / std::sqrt(D2 + u * u + v * v) * g1;
+    }
+    else if (geo.scan_type == 1) {
+        float derivative = dgDbeta + dgDu;
+        dG1[idx] = D / std::sqrt(D2 + v * v) * derivative;
+    }
 }
 
 __global__ void cal_G2(float* dG1, float* dG2, float* d_k_lines, CTGeometry geo, int nPsi, float psi_min, float dPsi)
@@ -94,6 +101,12 @@ __global__ void cal_G2(float* dG1, float* dG2, float* d_k_lines, CTGeometry geo,
     const int psi_idx = idx_currentView / nDetU;
     const int u_idx = idx_currentView % nDetU;
     float v_idx = d_k_lines[idx_currentView];
+
+    if (!isfinite(v_idx) || v_idx < 0.0f || v_idx > static_cast<float>(nDetV - 1))
+    {
+        dG2[idx] = 0.0f;
+        return;
+    }
 
     int v0 = static_cast<int>(floorf(v_idx));
     if (v0 < 0.0f || v0 > nDetV - 1)
@@ -171,6 +184,13 @@ __global__ void cal_filtedProj(float* dG3, float* d_filtedProj, float* d_inverse
     int g30_idx = psi_view_offset+psi0 * nDetU + u_idx;
     int g31_idx = psi_view_offset+psi1 * nDetU + u_idx;
     d_filtedProj[idx] = (1.f - w1) * dG3[g30_idx] + w1 * dG3[g31_idx];
+
+    if (geo.scan_type == 1)
+    {
+        const float u_center = 0.5f * static_cast<float>(nDetU - 1);
+        const float alpha = (static_cast<float>(u_idx) - u_center) * geo.du;
+        d_filtedProj[idx] *= cosf(alpha);
+    }
 }
 
 inline __device__ float float_clamp(float x, float minv, float maxv)
@@ -252,8 +272,8 @@ __global__ void BackProjKern(float* dProj, float* dVol, CTGeometry geo)
 
     float beta_b, beta_t;
     if (!calculate_PI_line(geo.SID, geo.pitch / (2.f * PI), geo.zStart, x_pos, y_pos, z_pos, beta_b, beta_t)) return;
-    float index_b = beta_b / geo.angleStep;
-    float index_t = beta_t / geo.angleStep;
+    float index_b = beta_b / std::abs(geo.angleStep);
+    float index_t = beta_t / std::abs(geo.angleStep);
     float index_min = min(index_b, index_t);
     float index_max = max(index_b, index_t);
     int view_b = static_cast<int>(ceil(index_min));
@@ -271,19 +291,22 @@ __global__ void BackProjKern(float* dProj, float* dVol, CTGeometry geo)
         float sy = geo.SID * ray_dire_y;
         float sz = iview * dz_per_view + geo.zStart;
         int det_offset = iview * det_offset_per_view;
+        float u, v, den;
         if (scan_type == 0)
-        {
-            float u, v, den;
+        {  
             if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                 geo.SID, geo.SDD, geo.du, geo.dv,
-                geo.nDetU, geo.nDetV, geo.detectorVCenterOffsetPix, u, v, den)) continue;
-            const float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
-            const float w = 1.f / (2.f * PI * den);
-            dVol[idx] += w * q * std::fabs(geo.angleStep);
+                geo.nDetU, geo.nDetV, geo.detectorVCenterOffsetPix, u, v, den)) continue;          
         }
         else if (scan_type == 1) {
-
+            float source_to_voxel_xy_sq;
+            if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
+                geo.SID, geo.SDD, geo.du, geo.dv,
+                geo.nDetU, geo.nDetV, geo.detectorVCenterOffsetPix, u, v, source_to_voxel_xy_sq, den)) continue;
         }
+        const float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
+        const float w = 1.f / (2.f * PI * den);
+        dVol[idx] += w * q * std::fabs(geo.angleStep);
     }
 }
 
@@ -486,7 +509,10 @@ void GpuKatsevichRecon::construct_hilbert_kernel()
     int kernel_len = m_geo.nDetU * 2 - 1;
     m_hilbert_kernel.assign(kernel_len, 0.f);
     for (size_t i = m_geo.nDetU; i < kernel_len; i += 2) {
-        m_hilbert_kernel[i] = twoOverPI / (i - m_geo.nDetU + 1) / m_geo.du;
+        if (m_geo.scan_type == 0)
+            m_hilbert_kernel[i] = twoOverPI / (i - m_geo.nDetU + 1) / m_geo.du;
+        else if (m_geo.scan_type == 1)
+            m_hilbert_kernel[i] = twoOverPI / std::sin((i - m_geo.nDetU + 1) * m_geo.du);
         if (i > m_geo.nDetU - 1) {
             m_hilbert_kernel[kernel_len - 1 - i] = -m_hilbert_kernel[i];
         }

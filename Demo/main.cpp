@@ -79,12 +79,12 @@ int main()
     geo.pitch = 120.f;
     geo.nViews = 5040;
     geo.angleStep = -0.5f / 180.f * std::acosf(-1.f);
-    geo.nx = 128;
-    geo.ny = 128;
-    geo.nz = 180;
-    geo.dx = 4.f;
-    geo.dy = 4.f;
-    geo.dz = 4.0f;
+    geo.nx = 256;
+    geo.ny = 256;
+    geo.nz = 360;
+    geo.dx = 2.f;
+    geo.dy = 2.f;
+    geo.dz = 2.0f;
     geo.zStart = -350.f;
     geo.scan_type = 1;
     
@@ -138,7 +138,7 @@ int main()
     HMODULE hDll = nullptr;
     PFN_Destroy fnDel = nullptr;
 
-    if (false && HasAvailableCudaDevice())
+    if (HasAvailableCudaDevice())
     {
         std::cout << "Try GPU mode\n";
         hDll = LoadLibraryA("ReconGPU.dll");
