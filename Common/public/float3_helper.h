@@ -160,7 +160,7 @@ CUDA_HOST_DEV inline bool VoxelToFlatDetectorUV(
     float beta, float source_z,
     float SID, float SDD,
     float du, float dv,
-    int nDetU, int nDetV,
+    int nDetU, int nDetV,float detectorVCenterOffsetPix,
     float& u_index, float& v_index,
     float& source_to_voxel_radial)
 {
@@ -176,7 +176,7 @@ CUDA_HOST_DEV inline bool VoxelToFlatDetectorUV(
     const float v_mm = magnification * (z - source_z);
 
     u_index = u_mm / du + 0.5f * static_cast<float>(nDetU) - 0.5f;
-    v_index = v_mm / dv + 0.5f * static_cast<float>(nDetV) - 0.5f;
+    v_index = v_mm / dv + 0.5f * static_cast<float>(nDetV) - 0.5f+ detectorVCenterOffsetPix;
     source_to_voxel_radial = den;
     return true;
 }
@@ -186,7 +186,7 @@ CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
     float beta, float source_z,
     float SID, float SDD,
     float dgamma, float dv,
-    int nDetU, int nDetV,
+    int nDetU, int nDetV,float detectorVCenterOffsetPix,
     float& u_index,
     float& v_index,
     float& source_to_voxel_xy_sq,
@@ -224,7 +224,7 @@ CUDA_HOST_DEV inline bool VoxelToEquiangularDetectorUV(
     const float center_u =0.5f *static_cast<float>(nDetU) - 0.5f;
     const float center_v =0.5f *static_cast<float>(nDetV) -0.5f;
     u_index = gamma / dgamma +center_u;
-    v_index = v_detector / dv +center_v;
+    v_index = v_detector / dv +center_v+ detectorVCenterOffsetPix;
     source_to_voxel_xy_sq = L2;
     radial_den = den;
     return true;

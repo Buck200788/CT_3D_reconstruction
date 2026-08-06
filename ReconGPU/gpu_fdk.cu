@@ -54,7 +54,7 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
             float u, v, den;
             if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                 geo.SID, geo.SDD, geo.du, geo.dv,
-                geo.nDetU, geo.nDetV, u, v, den)) continue;
+                geo.nDetU, geo.nDetV, geo.detectorVCenterOffsetPix, u, v, den)) continue;
             const float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
             const float w = (geo.SID * geo.SID) / (den * den);
             dVol[idx] += 0.5f * w * q * std::fabs(geo.angleStep);
@@ -67,7 +67,7 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
             float den;
             if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                 geo.SID, geo.SDD, geo.du, geo.dv,
-                geo.nDetU, geo.nDetV, u, v, horizontal_distance_sq,den)) continue;
+                geo.nDetU, geo.nDetV, geo.detectorVCenterOffsetPix, u, v, horizontal_distance_sq,den)) continue;
             float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
             dVol[idx] += 0.5f * q / horizontal_distance_sq * std::fabs(geo.angleStep);
         }
@@ -93,7 +93,8 @@ __global__ void proj_geom_filted(const float* dProj, float* d_proj_geom_filtered
     int iu = idx_per_view % nDetU;
     int iv = idx_per_view / nDetU;
     float u = -0.5f * u_len + (iu + 0.5f) * du;
-    float v = -0.5f * v_len + (iv + 0.5f) * dv;
+    const float v_center = 0.5f * static_cast<float>(nDetV - 1);
+    const float v = (static_cast<float>(iv) - v_center - geo.detectorVCenterOffsetPix) * dv;
     if (geo.scan_type == 0) {
         float weight = D / sqrt(D * D + u * u + v * v);
         d_proj_geom_filtered[idx] = dProj[idx] * weight;

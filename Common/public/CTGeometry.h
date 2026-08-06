@@ -19,6 +19,8 @@ struct CTGeometry
 
     short scan_type = 0;
 
+    float detectorVCenterOffsetPix = 0.f;
+
     // 重建体素
     int nx = 64;
     int ny = 64;

@@ -247,7 +247,7 @@ __global__ void BackProjKern(float* dProj, float* dVol, CTGeometry geo)
             float u, v, den;
             if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                 geo.SID, geo.SDD, geo.du, geo.dv,
-                geo.nDetU, geo.nDetV, u, v, den)) continue;
+                geo.nDetU, geo.nDetV, geo.detectorVCenterOffsetPix, u, v, den)) continue;
             const float q = BilinearInterp(dProj + det_offset, u, v, geo.nDetU, geo.nDetV);
             const float w = 1.f / (2.f * PI * den);
             dVol[idx] += w * q * std::fabs(geo.angleStep);

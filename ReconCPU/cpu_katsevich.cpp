@@ -11,6 +11,34 @@
 #include <chrono>
 #include <mutex>
 
+namespace
+{
+    constexpr float GEOM_EPS = 1.0e-12f;
+
+    inline float SignedPitchPerBeta(
+        float pitch,
+        float angle_step)
+    {
+        return pitch * std::fabs(angle_step) / angle_step;
+    }
+
+    inline float HelixSlopePerBeta(
+        float pitch,
+        float angle_step)
+    {
+        const float PI = std::acos(-1.0f);
+        return SignedPitchPerBeta(pitch, angle_step) / (2.0f * PI);
+    }
+
+    inline float HelixDzPerView(
+        float pitch,
+        float angle_step)
+    {
+        const float PI = std::acos(-1.0f);
+        return pitch * std::fabs(angle_step) / (2.0f * PI);
+    }
+}
+
 CpuKatsevichRecon::CpuKatsevichRecon(const CTGeometry& geo, const recon_para& recp) : BaseRecon(geo, recp) {}
 
 float CpuKatsevichRecon::PsiOverTanPsi(float psi)
@@ -27,7 +55,7 @@ float CpuKatsevichRecon::PsiOverTanPsi(float psi)
 void CpuKatsevichRecon::calculate_kLines_equal_angle()
 {
     const float D = m_geo.SDD;
-    const float P = m_geo.pitch;
+    const float P = SignedPitchPerBeta(m_geo.pitch, m_geo.angleStep);
     const float R = m_geo.SID;
     const float PI = std::acos(-1.f);
     const float dAlpha = m_geo.du;
@@ -78,7 +106,7 @@ void CpuKatsevichRecon::calculate_kLines_equal_angle()
         for (int ialpha = 0; ialpha < nAlpha; ialpha++) {
             const float alpha = (static_cast<float>(ialpha) - alpha_center) * dAlpha;
             const float w_kappa = kappa_scale * (psi * cosAlpha[ialpha] + q * sinAlpha[ialpha]);
-            const float w_index =w_kappa / dw + w_center;
+            const float w_index =w_kappa / dw + w_center + m_geo.detectorVCenterOffsetPix;
             m_k_lines[static_cast<size_t>(ipsi) * nAlpha + ialpha] = w_index;
         }
     }
@@ -138,7 +166,7 @@ void CpuKatsevichRecon::calculate_inverse_Psi_index()
 void CpuKatsevichRecon::calculate_kLines()
 {
     const float D = m_geo.SDD;
-    const float P = m_geo.pitch;
+    const float P = SignedPitchPerBeta(m_geo.pitch, m_geo.angleStep);
     const float R = m_geo.SID;
     const float PI = std::acos(-1.f);
 
@@ -198,7 +226,7 @@ void CpuKatsevichRecon::calculate_kLines()
         for (int iu = 0; iu < m_geo.nDetU; iu++) {
             const float u = (static_cast<float>(iu) - u_center) * m_geo.du;
             const float v_kappa =kappa_scale *(psi+ q * u / D);
-            const float v_index = v_kappa / m_geo.dv + v_center;
+            const float v_index = v_kappa / m_geo.dv + v_center+ m_geo.detectorVCenterOffsetPix;
             m_k_lines[ipsi * m_geo.nDetU + iu] = v_index;
         }
     }
@@ -228,6 +256,14 @@ void CpuKatsevichRecon::construct_hilbert_kernel()
 
 void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {
+    if (m_geo.scan_type != 0 && m_geo.scan_type != 1)
+    {
+        throw std::invalid_argument("Unsupported detector scan type");
+    }
+    if (std::fabs(m_geo.angleStep) < GEOM_EPS)        throw std::invalid_argument("angleStep must be non-zero");
+
+    if (std::fabs(m_geo.pitch) < GEOM_EPS)
+        throw std::invalid_argument("Helical pitch must be non-zero");
     int size = m_geo.nx * m_geo.ny * m_geo.nz;
     vol.assign(size, 0.f);
     std::vector<float> filt = proj;
@@ -243,10 +279,10 @@ void CpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
     FilterProj(proj, filt);
     printf("pre-filter done, starting build PI LUT\n");
     
-    std::ofstream outs("D:\\data1_6144x5040.raw",std::ios::binary);
-    outs.write(reinterpret_cast<const char*>(filt.data()), sizeof(float) * filt.size());
-    outs.close();
-    return;
+    //std::ofstream outs("D:\\data1_6144x5040.raw",std::ios::binary);
+    //outs.write(reinterpret_cast<const char*>(filt.data()), sizeof(float) * filt.size());
+    //outs.close();
+    //return;
     build_PI_LUT();
     printf("bulid pi LUT done, starting backprojection\n");
     BackProject(filt, vol);
@@ -317,7 +353,7 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
                 std::fill(G3.begin(), G3.end(), 0.0f);
                 for (int iv = 1; iv < nDetV-1; iv++) {
                     int current_v_offset = iv * nDetU;
-                    float v = (static_cast<float>(iv) - v_center) * dv;
+                    float v = (static_cast<float>(iv) - v_center - m_geo.detectorVCenterOffsetPix) * dv;
                     for (int iu = 1; iu < nDetU - 1; iu++) {
                         float dgDbeta = (in[current_view_offset + view_offset + current_v_offset + iu] - in[current_view_offset - view_offset + current_v_offset  + iu]) * inv2DBeta;
                         float dgDv = (in[current_view_offset + current_v_offset + nDetU + iu] - in[current_view_offset + current_v_offset - nDetU + iu]) * inv2Dv;
@@ -329,15 +365,16 @@ void CpuKatsevichRecon::FilterProj(const std::vector<float>& in, std::vector<flo
                         }
                         else if (m_geo.scan_type == 1) {
                             float derivative = dgDbeta + dgDu;
-                            printf("%f %f\n", dgDbeta, dgDu);
+                            //if(derivative!=0)printf("%f %f\n", dgDbeta, dgDu);
                             G1[current_v_offset + iu] = D / std::sqrt(D2 + v * v) * derivative;
+                            //if (G1[current_v_offset + iu] != 0)printf("%f\n", G1[current_v_offset + iu]);
                         }
                         
                     }
                 }
 
-                for (int i = 0; i < G1.size(); i++) if(G1[i]!=0) printf("%d, %f\n", i, G1[i]);
-                continue;
+                //for (int i = 0; i < G1.size(); i++) if(G1[i]!=0) printf("%d, %f\n", i, G1[i]);
+                //continue;
 
                 for (int ipsi = 0; ipsi < nPsi; ipsi++) {
                     const int psi_offset = ipsi * nDetU;
@@ -470,14 +507,15 @@ void CpuKatsevichRecon::build_PI_LUT()
 {
     const float PI = std::acos(-1.f);
 
-    const double R = m_geo.SID;
-    const double P = m_geo.pitch;
-    const double h = P / (2.0 * PI);
+    const double R = static_cast<double>(m_geo.SID);
+    const double P_beta = static_cast<double>(SignedPitchPerBeta(m_geo.pitch, m_geo.angleStep));
 
-    int n_PiLines_per_pitch = 2 * std::ceil(std::abs(P) / m_geo.dz);
+    const double h = P_beta / (2.0 * PI);
+    const double pitch_abs = std::fabs(static_cast<double>(m_geo.pitch));
+
+    int n_PiLines_per_pitch = 2 * std::ceil(pitch_abs / m_geo.dz);
     n_PiLines_per_pitch = std::max(n_PiLines_per_pitch, 2);
     m_nPILines_per_pitch = n_PiLines_per_pitch;
-    const float z_step = P / n_PiLines_per_pitch;
     unsigned int total_cnt = n_PiLines_per_pitch * m_geo.nx * m_geo.ny;
     const float invalid =  std::numeric_limits<float>::quiet_NaN();
     m_pi_LUT.assign(total_cnt*2, invalid);
@@ -534,9 +572,8 @@ bool CpuKatsevichRecon::calculate_pi(int ix, int iy, float z, float& beta_b, flo
 {
     const float PI = std::acos(-1.f);
     const float TWO_PI = 2 * PI;
-    const double P = m_geo.pitch;
-    const double h = P / (2.0 * PI);
-    const float z_step = P / m_nPILines_per_pitch;
+    const double P_beta = static_cast<double>(SignedPitchPerBeta(m_geo.pitch, m_geo.angleStep));
+    const double h = P_beta / (2.0 * PI);
     const float z0 = m_geo.zStart;
     const double beta_z = (static_cast<double>(z) - z0) / h;
     double phase = beta_z - TWO_PI * std::floor(beta_z / TWO_PI);
@@ -586,7 +623,8 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
         workers.emplace_back([this, &proj, &vol, start, end, &finished_slices, &print_mutex, backproject_start]()
             {
                 const float PI = std::acosf(-1.0f);
-                const float dz_per_view = m_geo.pitch / (2.f * PI / m_geo.angleStep);
+                //const float dz_per_view = HelixDzPerView(m_geo.pitch, m_geo.angleStep);
+                const float h_beta = HelixSlopePerBeta(m_geo.pitch, m_geo.angleStep);
                 const int det_offset_per_view = m_geo.nDetU * m_geo.nDetV;
                 const int scan_type = m_geo.scan_type;
                 for (int iz = start; iz < end; iz++) {
@@ -618,7 +656,7 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
 
                                 float sx = m_geo.SID * ray_dire_x;
                                 float sy = m_geo.SID * ray_dire_y;
-                                float sz = iview * dz_per_view + m_geo.zStart;
+                                float sz = m_geo.zStart + h_beta*angle;
                                 int det_offset = iview * det_offset_per_view;
                                 int vox_offset = iz * m_geo.ny * m_geo.nx;
                                 float u, v, den;
@@ -626,13 +664,13 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
                                 {    
                                     if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                                         m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
-                                        m_geo.nDetU, m_geo.nDetV, u, v, den)) continue;                                   
+                                        m_geo.nDetU, m_geo.nDetV, m_geo.detectorVCenterOffsetPix, u, v, den)) continue;
                                 }
                                 else if (scan_type == 1) {
                                     float source_to_voxel_xy_sq;
                                     if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                                         m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
-                                        m_geo.nDetU, m_geo.nDetV, u, v, source_to_voxel_xy_sq,den)) continue;
+                                        m_geo.nDetU, m_geo.nDetV, m_geo.detectorVCenterOffsetPix, u, v, source_to_voxel_xy_sq,den)) continue;
                                 }
                                 const float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
                                 const float w = 1.f / (2.f * PI * den);
@@ -641,7 +679,6 @@ void CpuKatsevichRecon::BackProject(const std::vector<float>& proj, std::vector<
                         }
                     }
                     const int done = finished_slices.fetch_add(1, std::memory_order_relaxed) + 1;
-
                     if (done % 5 == 0 || done == m_geo.nz)
                     {
                         std::cout << "BackProject progress: " << done << " / " << m_geo.nz << '\n';

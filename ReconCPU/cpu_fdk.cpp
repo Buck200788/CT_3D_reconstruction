@@ -102,7 +102,7 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
                                     float u, v, den;
                                     if (!VoxelToFlatDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                                         m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
-                                        m_geo.nDetU, m_geo.nDetV, u, v, den)) continue;
+                                        m_geo.nDetU, m_geo.nDetV, m_geo.detectorVCenterOffsetPix, u, v, den)) continue;
 
                                     const float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
                                     const float w = (m_geo.SID * m_geo.SID) / (den * den);
@@ -115,7 +115,7 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
                                     float den;
                                     if (!VoxelToEquiangularDetectorUV(x_pos, y_pos, z_pos, angle, sz,
                                         m_geo.SID, m_geo.SDD, m_geo.du, m_geo.dv,
-                                        m_geo.nDetU, m_geo.nDetV, u, v, horizontal_distance_sq,den)) continue;
+                                        m_geo.nDetU, m_geo.nDetV, m_geo.detectorVCenterOffsetPix, u, v, horizontal_distance_sq,den)) continue;
                                     float q = BilinearInterp(proj.data() + det_offset, u, v, m_geo.nDetU, m_geo.nDetV);
                                     vol[vox_offset + iy * m_geo.nx + ix] += 0.5f* q / horizontal_distance_sq * std::fabs(m_geo.angleStep);
                                 }
@@ -191,12 +191,13 @@ void CpuFDKRecon::ParallelPreprocessProj(std::vector<float>& filter_geom_filted,
                 const int filter_len = static_cast<int>(filter.size());
                 const int half_win = filter_len / 2;
 
+                const float v_center = 0.5f * static_cast<float>(nDetV - 1);
+
                 for (int view = start; view < end; view++)
                 {
                     for (int iv = 0; iv < nDetV; iv++)
                     {
-                        // geometry weighted
-                        float v = -0.5f * v_len + (iv + 0.5f) * dv;
+                        const float v = (static_cast<float>(iv) - v_center - m_geo.detectorVCenterOffsetPix) * dv;
                         for (int iu = 0; iu < nDetU; iu++)
                         {
                             float u = -0.5f * u_len + (iu + 0.5f) * du;
