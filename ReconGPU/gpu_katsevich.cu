@@ -7,6 +7,35 @@
 #include <iostream>
 #include "float3_helper.h"
 
+namespace
+{
+    constexpr float GEOM_EPS = 1.0e-12f;
+
+    inline float SignedPitchPerBeta(
+        float pitch,
+        float angle_step)
+    {
+        return pitch * std::fabs(angle_step) / angle_step;
+    }
+
+    inline float HelixSlopePerBeta(
+        float pitch,
+        float angle_step)
+    {
+        const float PI = std::acos(-1.0f);
+        return SignedPitchPerBeta(pitch, angle_step) / (2.0f * PI);
+    }
+
+    inline float HelixDzPerView(
+        float pitch,
+        float angle_step)
+    {
+        const float PI = std::acos(-1.0f);
+        return pitch * std::fabs(angle_step) / (2.0f * PI);
+    }
+}
+
+
 __global__ void geom_filter(float* dProj, float* dG1, CTGeometry geo)
 {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -271,7 +300,7 @@ float GpuKatsevichRecon::PsiOverTanPsi(float psi)
 void GpuKatsevichRecon::calculate_kLines()
 {
     const float D = m_geo.SDD;
-    const float P = m_geo.pitch;
+    const float P = SignedPitchPerBeta(m_geo.pitch, m_geo.angleStep);
     const float R = m_geo.SID;
     const float PI = std::acos(-1.f);
 
@@ -284,8 +313,20 @@ void GpuKatsevichRecon::calculate_kLines()
         throw std::invalid_argument("Helical pitch must be non-zero");
     }
 
+    const float half_x = 0.5f * m_geo.nx * m_geo.dx;
+    const float half_y = 0.5f * m_geo.ny * m_geo.dy;
+
     const float u_edge = 0.5f * static_cast<float>(m_geo.nDetU) * m_geo.du;
-    const float alpha_m = std::atan(u_edge / D);
+
+    const float fov_radius = std::sqrt(half_x * half_x + half_y * half_y);
+    if (fov_radius >= m_geo.SID)
+        throw std::invalid_argument("FOV exceeds helical radius");
+    const float alpha_fov = std::asin(fov_radius / m_geo.SID);
+    const float alpha_detector = std::atan(u_edge / m_geo.SDD);
+    if (alpha_detector < alpha_fov)        throw std::runtime_error("Detector does not cover reconstruction FOV");
+    const float alpha_m = alpha_fov;
+
+    //const float alpha_m = std::atan(u_edge / D);
     const float psi_min = -0.5f * PI - alpha_m;
     const float psi_max = 0.5f * PI + alpha_m;
 
@@ -310,7 +351,6 @@ void GpuKatsevichRecon::calculate_kLines()
     const float dPsi = (psi_max - psi_min) / static_cast<float>(nPsi - 1);
 
     m_k_lines.assign(nPsi * m_geo.nDetU, 0);
-    m_inverse_Psi_index.assign(m_geo.nDetV * m_geo.nDetU, -1.f);
 
     const float u_center = 0.5f * (m_geo.nDetU - 1);
     const float v_center = 0.5f * (m_geo.nDetV - 1);
@@ -320,16 +360,83 @@ void GpuKatsevichRecon::calculate_kLines()
         for (int iu = 0; iu < m_geo.nDetU; iu++) {
             const float u = (static_cast<float>(iu) - u_center) * m_geo.du;
             const float v_kappa = kappa_scale * (psi + q * u / D);
-            const float v_index = v_kappa / m_geo.dv + v_center;
+            const float v_index = v_kappa / m_geo.dv + v_center + m_geo.detectorVCenterOffsetPix;
             m_k_lines[ipsi * m_geo.nDetU + iu] = v_index;
         }
     }
     m_nPsi = nPsi;
     m_psiMin = psi_min;
     m_dPsi = dPsi;
+}
+void GpuKatsevichRecon::calculate_kLines_equal_angle()
+{
+    const float D = m_geo.SDD;
+    const float P = SignedPitchPerBeta(m_geo.pitch, m_geo.angleStep);
+    const float R = m_geo.SID;
+    const float PI = std::acos(-1.f);
+    const float dAlpha = m_geo.du;
+    const int nAlpha = m_geo.nDetU;
+    const float dw = m_geo.dv;
+    const int nDetV = m_geo.nDetV;
+    const float alpha_center = 0.5f * static_cast<float>(nAlpha - 1);
+    const float w_center = 0.5f * static_cast<float>(nDetV - 1);
 
+    float alphaM = 0.5 * nAlpha * dAlpha;
+    const float psiMax = 0.5 * PI + alphaM;
+    const float psiMin = -1.f * psiMax;
+    float alpha_edge = -alphaM;
+
+    const float sin_psi = std::sin(psiMax);
+    const float cos_psi = std::cos(psiMax);
+    const float cot_psi = cos_psi / sin_psi;
+    const float csc2_psi = 1.0f / (sin_psi * sin_psi);
+    const float kappa_scale = D * P / (2.0f * PI * R);
+    const float q_prime = cot_psi - psiMax * csc2_psi;
+
+    const float max_dwdpsi = std::fabs(kappa_scale * (std::cos(alpha_edge) + std::sin(alpha_edge) * q_prime));
+    const float A = 0.5f * PI + alphaM;
+    int M = static_cast<int>(std::ceil(A * max_dwdpsi / dw));
+    M = std::max(M, 1);
+    const int nPsi = 2 * M + 1;
+    const float dPsi = A / static_cast<float>(M);
+
+    m_nPsi = nPsi;
+    m_psiMin = psiMin;
+    m_dPsi = dPsi;
+
+    m_k_lines.assign(nPsi * nAlpha, 0.f);
+
+    std::vector<float> sinAlpha(nAlpha);
+    std::vector<float> cosAlpha(nAlpha);
+
+    for (int ia = 0; ia < nAlpha; ++ia)
+    {
+        const float alpha = (static_cast<float>(ia) - alpha_center) * dAlpha;
+        sinAlpha[ia] = std::sin(alpha);
+        cosAlpha[ia] = std::cos(alpha);
+    }
+
+    for (int ipsi = 0; ipsi < nPsi; ipsi++) {
+        const float psi = psiMin + ipsi * dPsi;
+        const float q = PsiOverTanPsi(psi);
+        for (int ialpha = 0; ialpha < nAlpha; ialpha++) {
+            const float alpha = (static_cast<float>(ialpha) - alpha_center) * dAlpha;
+            const float w_kappa = kappa_scale * (psi * cosAlpha[ialpha] + q * sinAlpha[ialpha]);
+            const float w_index = w_kappa / dw + w_center + m_geo.detectorVCenterOffsetPix;
+            m_k_lines[static_cast<size_t>(ipsi) * nAlpha + ialpha] = w_index;
+        }
+    }
+
+}
+void GpuKatsevichRecon::calculate_inverse_Psi_index()
+{
+    const int nPsi = m_nPsi;
+    const float dPsi = m_dPsi;
+    const float psi_min = m_psiMin;
     const int nDetU = m_geo.nDetU;
     const int nDetV = m_geo.nDetV;
+
+    m_inverse_Psi_index.assign(m_geo.nDetV * m_geo.nDetU, -1.f);
 
     for (int iu = 0; iu < nDetU; ++iu)
     {
@@ -417,8 +524,26 @@ void GpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
     int vSize = m_geo.nx * m_geo.ny * m_geo.nz;
     vol.assign(vSize, 0.f);
 
-    calculate_kLines();
+    if (m_geo.scan_type != 0 && m_geo.scan_type != 1)
+    {
+        throw std::invalid_argument("Unsupported detector scan type");
+    }
+    if (std::fabs(m_geo.angleStep) < GEOM_EPS) throw std::invalid_argument("angleStep must be non-zero");
+
+    if (std::fabs(m_geo.pitch) < GEOM_EPS)
+        throw std::invalid_argument("Helical pitch must be non-zero");
+    int size = m_geo.nx * m_geo.ny * m_geo.nz;
+    vol.assign(size, 0.f);
+
+    if (m_geo.scan_type == 0)
+        calculate_kLines();
+    else if (m_geo.scan_type == 1)
+        calculate_kLines_equal_angle();
+    printf("calculating the Klines done\n");
+    calculate_inverse_Psi_index();
+    printf("calculating inverse Klines done\n");
     construct_hilbert_kernel();
+    printf("calculating Hilbert kernel done\n");
 
     int kline_size = m_nPsi * m_geo.nDetU;
     int psi_total_size = kline_size * m_geo.nViews;

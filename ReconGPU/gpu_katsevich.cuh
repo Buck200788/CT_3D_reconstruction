@@ -11,6 +11,8 @@ private:
 
     float PsiOverTanPsi(float psi);
     void calculate_kLines();
+    void calculate_kLines_equal_angle();
+    void calculate_inverse_Psi_index();
     void construct_hilbert_kernel();
 
     void cleanup();
