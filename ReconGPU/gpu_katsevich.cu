@@ -206,12 +206,15 @@ __device__ float evaluate(float beta_m, float x, float y, float z, float R, floa
     cos_delta = float_clamp(cos_delta, -1.f, 1.f);
     float delta_m = acos(cos_delta);
     float sin_delta = sin(delta_m);
+    if (fabsf(sin_delta) < 1.0e-7f) return nanf("");
     float mu = (-x * sin_beta + y * cos_beta) / (R * sin_delta);
     return z0 + h * (beta_m + mu * delta_m) - z;
 }
 
 __device__ bool calculate_PI_line(const float R, const float h, const float z0, float x, float y, float z, float& beta_b, float& belta_t)
 {
+    const float radius2 = x * x + y * y;
+    if (radius2 >= R * R)        return false;
     const float PI = acos(-1.f);
     if (fabs(h) < 1.0e-12f) return false;
     float beta_z = (z - z0) / h;
@@ -225,6 +228,7 @@ __device__ bool calculate_PI_line(const float R, const float h, const float z0, 
     for (size_t i = 0; i < 40; i++) {
         float mid = 0.5 * (lo + hi);
         float f_mid = evaluate(mid, x, y, z, R, z0, h);
+        if (!isfinite(f_mid)) return false;
         if ((f_mid <= 0 && f_lo >= 0) || (f_mid >= 0 && f_lo <= 0)) {
             hi = mid;
             f_hi = f_mid;
@@ -246,7 +250,71 @@ __device__ bool calculate_PI_line(const float R, const float h, const float z0, 
     return true;
 }
 
-__global__ void BackProjKern(float* dProj, float* dVol, CTGeometry geo)
+__global__ void build_PI_LUT_kernel(float* d_pi_LUT, CTGeometry geo, int n_PiLines_per_pitch)
+{
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int nx = geo.nx;
+    const int ny = geo.ny;
+    const float dx = geo.dx;
+    const float dy = geo.dy;
+    const float dz = geo.dz;
+
+    const int nVox_per_z = nx * ny;
+    const int total_vox = nVox_per_z * n_PiLines_per_pitch;
+    if (idx >= total_vox) return;
+
+    const float PI = acos(-1.f);
+    const int iz = idx / nVox_per_z;
+    const int idx_current_z = idx % nVox_per_z;
+    const int iy = idx_current_z / nx;
+    const int ix = idx_current_z % nx;
+
+    float x_pos = (-0.5f * nx + ix + 0.5) * dx;
+    float y_pos = (-0.5f * ny + iy + 0.5) * dy;
+    double p_beta = geo.angleStep > 0 ? geo.pitch : (-1.f * geo.pitch);
+    double h_beta = p_beta / (2 * PI);
+    const float phase = 2 * PI * iz / n_PiLines_per_pitch;
+    float z_pos = geo.zStart+ phase * h_beta;
+    float beta_b, beta_t;
+    if (!calculate_PI_line(geo.SID, static_cast<float>(h_beta), geo.zStart, x_pos, y_pos, z_pos, beta_b, beta_t))return;
+    else {
+        d_pi_LUT[2 * idx] = 0.5f * (beta_b + beta_t) - phase;
+        d_pi_LUT[2 * idx + 1] = 0.5f * (beta_t - beta_b);
+    }
+}
+
+__device__ bool calculate_pi(float* d_pi_LUT, CTGeometry geo, int ix, int iy, float z, int nPILines_per_pitch, float& beta_b, float& beta_t)
+{
+    const float PI = std::acos(-1.f);
+    const float TWO_PI = 2 * PI;
+    const int nx = geo.nx;
+    const int ny = geo.ny;
+    const float dx = geo.dx;
+    const float dy = geo.dy;
+    const float dz = geo.dz;
+    const int nVox_per_z = nx * ny;
+    const float z0 = geo.zStart;
+    double p_beta = geo.angleStep > 0 ? geo.pitch : (-1.f * geo.pitch);
+    double h_beta = p_beta / (2 * PI);
+    const double beta_z = (static_cast<double>(z) - z0) / h_beta;
+    double phase = beta_z - TWO_PI * floor(beta_z / TWO_PI);
+    double idx = phase * nPILines_per_pitch / TWO_PI;
+    int i0 = static_cast<int>(floor(idx));
+    double t = idx - i0;
+    i0 %= nPILines_per_pitch;
+    const int i1 = (i0 + 1) % nPILines_per_pitch;
+
+    int idx_0 = i0 * nVox_per_z + iy * nx + ix;
+    int idx_1 = i1 * nVox_per_z + iy * nx + ix;
+    const float midRelative = t * d_pi_LUT[2 * idx_1] + (1.f - t) * d_pi_LUT[2 * idx_0];
+    const float delta = t * d_pi_LUT[2 * idx_1 + 1] + (1.f - t) * d_pi_LUT[2 * idx_0 + 1];
+    const float betaMid = static_cast<float>(beta_z) + midRelative;
+    beta_b = betaMid - delta;
+    beta_t = betaMid + delta;
+    return beta_b < beta_t;
+}
+
+__global__ void BackProjKern(float* dProj, float* dVol, float* d_pi_LUT, int nPILines_per_pitch, CTGeometry geo)
 {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const int nx = geo.nx;
@@ -271,16 +339,22 @@ __global__ void BackProjKern(float* dProj, float* dVol, CTGeometry geo)
     float x_pos = (-0.5f * nx + ix + 0.5) * dx;
 
     float beta_b, beta_t;
-    if (!calculate_PI_line(geo.SID, geo.pitch / (2.f * PI), geo.zStart, x_pos, y_pos, z_pos, beta_b, beta_t)) return;
-    float index_b = beta_b / std::abs(geo.angleStep);
-    float index_t = beta_t / std::abs(geo.angleStep);
+    //if (!calculate_PI_line(geo.SID, geo.pitch / (2.f * PI), geo.zStart, x_pos, y_pos, z_pos, beta_b, beta_t)) return;
+    if (!calculate_pi(d_pi_LUT, geo, ix,iy, z_pos, nPILines_per_pitch, beta_b, beta_t)) return;
+    float index_b = beta_b / geo.angleStep;
+    float index_t = beta_t / geo.angleStep;
     float index_min = min(index_b, index_t);
     float index_max = max(index_b, index_t);
     int view_b = static_cast<int>(ceil(index_min));
     int view_t = static_cast<int>(floor(index_max));
-    const float dz_per_view = geo.pitch / (2.f * PI / geo.angleStep);
+    view_b = max(view_b, 1);
+    view_t = min(view_t, geo.nViews - 2);
+    if (view_b > view_t)return;
+
     const int det_offset_per_view = geo.nDetU * geo.nDetV;
     const int scan_type = geo.scan_type;
+    double p_beta = geo.angleStep > 0 ? geo.pitch : (-1.f * geo.pitch);
+    double h_beta = p_beta / (2 * PI);
     for (int iview = view_b; iview <= view_t; iview++) {
         if (iview < 1 || iview >= geo.nViews - 1)continue;
         float angle = iview * geo.angleStep;
@@ -289,7 +363,7 @@ __global__ void BackProjKern(float* dProj, float* dVol, CTGeometry geo)
 
         float sx = geo.SID * ray_dire_x;
         float sy = geo.SID * ray_dire_y;
-        float sz = iview * dz_per_view + geo.zStart;
+        float sz = angle * h_beta + geo.zStart;
         int det_offset = iview * det_offset_per_view;
         float u, v, den;
         if (scan_type == 0)
@@ -519,6 +593,41 @@ void GpuKatsevichRecon::construct_hilbert_kernel()
     }
 }
 
+bool GpuKatsevichRecon::build_PI_LUT()
+{
+    const float PI = std::acos(-1.f);
+
+    const double R = static_cast<double>(m_geo.SID);
+    const double P_beta = static_cast<double>(SignedPitchPerBeta(m_geo.pitch, m_geo.angleStep));
+
+    const double h = P_beta / (2.0 * PI);
+    const double pitch_abs = std::fabs(static_cast<double>(m_geo.pitch));
+
+    int n_PiLines_per_pitch = 2 * std::ceil(pitch_abs / m_geo.dz);
+    n_PiLines_per_pitch = std::max(n_PiLines_per_pitch, 2);
+    m_nPILines_per_pitch = n_PiLines_per_pitch;
+    unsigned int total_cnt = n_PiLines_per_pitch * m_geo.nx * m_geo.ny;
+    const float invalid = std::numeric_limits<float>::quiet_NaN();
+    
+    cudaError_t cuda_status;
+    cuda_status = cudaMalloc(&d_pi_LUT, total_cnt*2 * sizeof(float));
+    if (cuda_status != cudaSuccess) { printf("cudaMalloc d_pi_LUT failed!!!"); return false; }
+
+    const int blockSize = 256;
+    dim3 block(blockSize, 1, 1);
+    dim3 grid((total_cnt + blockSize - 1) / blockSize, 1, 1);
+    build_PI_LUT_kernel << <grid, block >> > (d_pi_LUT, m_geo, n_PiLines_per_pitch);
+    cuda_status = cudaDeviceSynchronize();
+    if (cuda_status != cudaSuccess)
+    {
+        std::cerr << "build_PI_LUT_kernel cudaDeviceSynchronize failed: "
+            << cudaGetErrorName(cuda_status) << " (" << static_cast<int>(cuda_status) << "): "
+            << cudaGetErrorString(cuda_status) << std::endl;
+        return false;
+    }
+    return true;
+}
+
 GpuKatsevichRecon::GpuKatsevichRecon(const CTGeometry& geo, const recon_para& recp) : BaseRecon(geo, recp) {}
 
 void GpuKatsevichRecon::cleanup()
@@ -532,6 +641,7 @@ void GpuKatsevichRecon::cleanup()
     if (d_G3) cudaFree(d_G3);
     if (d_filtedProj) cudaFree(d_filtedProj);
     if (d_vol) cudaFree(d_vol);
+    if (d_pi_LUT)cudaFree(d_pi_LUT);
 
     d_k_lines = nullptr;
     d_inverse_Psi_index = nullptr;
@@ -623,6 +733,12 @@ void GpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
         throw std::runtime_error("CUDA filtering failed");
     }
 
+    if (!build_PI_LUT())
+    {
+        cleanup();
+        throw std::runtime_error("CUDA build PI_LUT failed");
+    }
+
     if (!BackProjKernel(d_filtedProj, d_vol))
     {
         cleanup();
@@ -690,7 +806,7 @@ bool GpuKatsevichRecon::BackProjKernel(float* dProj, float* dVol)
     int vTotal = m_geo.nx * m_geo.ny * m_geo.nz;
     dim3 block(256);
     dim3 grid((vTotal + 255) / 256);
-    BackProjKern<<<grid, block>>>(dProj, dVol, m_geo);
+    BackProjKern<<<grid, block>>>(dProj, dVol,d_pi_LUT,m_nPILines_per_pitch, m_geo);
 
     cudaError_t cuda_status = cudaDeviceSynchronize();
     if (cuda_status != cudaSuccess)

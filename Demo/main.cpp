@@ -74,17 +74,18 @@ int main()
     geo.nDetV = 12;
     geo.du = 0.002569f; // d_angle
     geo.dv = 10.f; // d_det
+    geo.detectorVCenterOffsetPix = 2.0f;
     geo.SDD = 1180.f;
     geo.SID = 710.;
     geo.pitch = 120.f;
     geo.nViews = 5040;
     geo.angleStep = -0.5f / 180.f * std::acosf(-1.f);
-    geo.nx = 256;
-    geo.ny = 256;
-    geo.nz = 360;
-    geo.dx = 2.f;
-    geo.dy = 2.f;
-    geo.dz = 2.0f;
+    geo.nx = 512;
+    geo.ny = 512;
+    geo.nz = 700;
+    geo.dx = 1.f;
+    geo.dy = 1.f;
+    geo.dz = 1.0f;
     geo.zStart = -350.f;
     geo.scan_type = 1;
     

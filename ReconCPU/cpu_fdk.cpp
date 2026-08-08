@@ -176,8 +176,8 @@ void CpuFDKRecon::ParallelPreprocessProj(std::vector<float>& filter_geom_filted,
 
         workers.emplace_back([this, &filter_geom_filted, &filter, start, end]()
             {
-                const int SDD = m_geo.SDD;
-                const int SID = m_geo.SID;
+                const float SDD = m_geo.SDD;
+                const float SID = m_geo.SID;
                 const int nDetU = m_geo.nDetU;
                 const int nDetV = m_geo.nDetV;
                 const float du = m_geo.du;
