@@ -167,7 +167,7 @@ The horizontal fan angle is
 
 $$
 \gamma =
-\operatorname{atan2}(t,den).
+\mathrm{atan2}(t,den).
 $$
 
 Then
@@ -986,9 +986,8 @@ The PI-LUT is particularly important because it replaces repeated per-voxel nonl
 Approximate PI-LUT memory usage is
 
 $$
-N_{bytes}
-=
-nx\cdot ny\cdot N_{phase}\cdot 2\cdot sizeof(float).
+N_{\mathrm{bytes}} =
+nx\cdot ny\cdot N_{\mathrm{phase}}\cdot 2\cdot \mathrm{sizeof}(\mathrm{float}).
 $$
 
 Using `float2(midRelative, delta)` is a natural representation on CUDA.
