@@ -619,10 +619,7 @@ Because PI geometry is periodic over one helical turn, the implementation precom
 Each LUT entry stores
 
 $$
-midRelative =
-\frac{\beta_b+\beta_t}{2}
--
-phase
+midRelative =\frac{\beta_b+\beta_t}{2}-phase
 $$
 
 and the positive half-width
