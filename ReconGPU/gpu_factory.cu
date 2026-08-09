@@ -2,6 +2,7 @@
 #include "../Common/public/ReconAlgoEnum.h"
 #include "gpu_fdk.cuh"
 #include "gpu_katsevich.cuh"
+#include "gpu_iterative.cuh"
 
 extern "C" RECON_API BaseRecon* CreateGpuRecon(ReconAlgorithm algo, const CTGeometry& geo, const recon_para& rec_p)
 {
@@ -11,6 +12,8 @@ extern "C" RECON_API BaseRecon* CreateGpuRecon(ReconAlgorithm algo, const CTGeom
         return new GpuFDKRecon(geo, rec_p);
     case ReconAlgorithm::Katsevich:
         return new GpuKatsevichRecon(geo, rec_p);
+    case ReconAlgorithm::Iterative:
+        return new GpuIterativehRecon(geo, rec_p);
     default: return nullptr;
     }
 }

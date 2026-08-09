@@ -15,6 +15,8 @@
 #   define RECON_API
 #endif
 
+
+
 // 重建统一抽象基类，CPU/GPU完全兼容接口
 class RECON_API BaseRecon
 {
@@ -25,7 +27,7 @@ public:
     explicit BaseRecon(const CTGeometry& geo, const recon_para& recp) : m_geo(geo), rec_p(recp) {}
     virtual ~BaseRecon() = default;
 
-    // 纯虚重建接口
+    virtual void set_geom(float* geometry) {}
     virtual void Reconstruct(const std::vector<float>& projData, std::vector<float>& volumeOut) = 0;
 };
 

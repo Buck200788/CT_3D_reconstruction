@@ -20,34 +20,95 @@ inline float3 make_float3(float x, float y, float z)
 }
 #endif
 
-// 向量减法
-CUDA_HOST_DEV inline float3 operator-(const float3& a, const float3& b)
-{
-    return make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
-}
-
-// 向量加法
 CUDA_HOST_DEV inline float3 operator+(const float3& a, const float3& b)
 {
     return make_float3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
-// 向量 * 标量
+// a - b
+CUDA_HOST_DEV inline float3 operator-(const float3& a, const float3& b)
+{
+    return make_float3(a.x - b.x, a.y - b.y, a.z - b.z
+    );
+}
+
+// -a
+CUDA_HOST_DEV inline float3 operator-(const float3& a)
+{
+    return make_float3(-a.x, -a.y, -a.z);
+}
+
+// a * s
 CUDA_HOST_DEV inline float3 operator*(const float3& a, float s)
 {
     return make_float3(a.x * s, a.y * s, a.z * s);
 }
 
-// 标量 * 向量
-CUDA_HOST_DEV inline float3 operator*(float s, const float3& a)
+// s * a
+CUDA_HOST_DEV inline float3 operator*(    float s,    const float3& a)
 {
     return a * s;
 }
 
-// 点积
+// a / s
+CUDA_HOST_DEV inline float3 operator/(const float3& a, float s)
+{
+    return make_float3(a.x / s, a.y / s, a.z / s);
+}
+
+// +=
+CUDA_HOST_DEV inline float3& operator+=(float3& a, const float3& b)
+{
+    a.x += b.x;
+    a.y += b.y;
+    a.z += b.z;
+    return a;
+}
+
+// -=
+CUDA_HOST_DEV inline float3& operator-=(float3& a, const float3& b)
+{
+    a.x -= b.x;
+    a.y -= b.y;
+    a.z -= b.z;
+    return a;
+}
+
+// *=
+CUDA_HOST_DEV inline float3& operator*=(float3& a, float s)
+{
+    a.x *= s;
+    a.y *= s;
+    a.z *= s;
+    return a;
+}
+
 CUDA_HOST_DEV inline float dot(const float3& a, const float3& b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+CUDA_HOST_DEV inline float3 cross(const float3& a, const float3& b)
+{
+    return make_float3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+
+CUDA_HOST_DEV inline float lengthSquared(const float3& a)
+{
+    return dot(a, a);
+}
+
+CUDA_HOST_DEV inline float length(const float3& a)
+{
+    return sqrtf(dot(a, a));
+}
+
+CUDA_HOST_DEV inline float3 normalize(const float3& a)
+{
+    float len = length(a);
+    if (len > 0.0f)
+        return a / len;
+    return make_float3(0.f, 0.f, 0.f);
 }
 
 CUDA_HOST_DEV inline bool RayPlaneIntersect(

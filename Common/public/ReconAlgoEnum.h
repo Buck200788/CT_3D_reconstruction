@@ -2,5 +2,6 @@
 enum class ReconAlgorithm
 {
     FDK,
-    Katsevich
+    Katsevich,
+    Iterative
 };
