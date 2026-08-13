@@ -403,10 +403,12 @@ void GpuKatsevichRecon::calculate_kLines()
 
     if (D <= 0.0f || R <= 0.0f || m_geo.dv <= 0.0f || m_geo.nDetU < 2)
     {
+        printf("Invalid geometry for K-line calculation");
         throw std::invalid_argument("Invalid geometry for K-line calculation");
     }
     if (std::fabs(P) < 1.0e-12f)
     {
+        printf("Helical pitch must be non-zero");
         throw std::invalid_argument("Helical pitch must be non-zero");
     }
 
@@ -416,11 +418,17 @@ void GpuKatsevichRecon::calculate_kLines()
     const float u_edge = 0.5f * static_cast<float>(m_geo.nDetU) * m_geo.du;
 
     const float fov_radius = std::sqrt(half_x * half_x + half_y * half_y);
-    if (fov_radius >= m_geo.SID)
+    if (fov_radius >= m_geo.SID) {
+        printf("FOV exceeds helical radius");
         throw std::invalid_argument("FOV exceeds helical radius");
+    }
+        
     const float alpha_fov = std::asin(fov_radius / m_geo.SID);
     const float alpha_detector = std::atan(u_edge / m_geo.SDD);
-    if (alpha_detector < alpha_fov)        throw std::runtime_error("Detector does not cover reconstruction FOV");
+    if (alpha_detector < alpha_fov) {
+        printf("Detector does not cover reconstruction FOV");
+        throw std::runtime_error("Detector does not cover reconstruction FOV");
+    }
     const float alpha_m = alpha_fov;
 
     //const float alpha_m = std::atan(u_edge / D);
@@ -439,6 +447,7 @@ void GpuKatsevichRecon::calculate_kLines()
 
     if (std::fabs(dv_dpsi) < 1.0e-12f)
     {
+        printf("Invalid K-line sampling derivative");
         throw std::runtime_error("Invalid K-line sampling derivative");
     }
 
@@ -496,6 +505,11 @@ void GpuKatsevichRecon::calculate_kLines_equal_angle()
     M = std::max(M, 1);
     const int nPsi = 2 * M + 1;
     const float dPsi = A / static_cast<float>(M);
+
+    if (nPsi <= 2) {
+        printf("nPsi: %d? be sure about it!!!! maybe the du is not right for the euqal angle case?", nPsi);
+        throw std::invalid_argument("nPsi too small");
+    }
 
     m_nPsi = nPsi;
     m_psiMin = psiMin;
@@ -656,21 +670,29 @@ void GpuKatsevichRecon::cleanup()
 
 void GpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<float>& vol)
 {
+    //printf("debug1\n");
     int pSize = proj.size();
     int vSize = m_geo.nx * m_geo.ny * m_geo.nz;
     vol.assign(vSize, 0.f);
 
     if (m_geo.scan_type != 0 && m_geo.scan_type != 1)
     {
+        printf("Unsupported detector scan type");
         throw std::invalid_argument("Unsupported detector scan type");
     }
-    if (std::fabs(m_geo.angleStep) < GEOM_EPS) throw std::invalid_argument("angleStep must be non-zero");
+    if (std::fabs(m_geo.angleStep) < GEOM_EPS) {
+        printf("angleStep must be non-zero");
+        throw std::invalid_argument("angleStep must be non-zero");
+    }
 
-    if (std::fabs(m_geo.pitch) < GEOM_EPS)
+    if (std::fabs(m_geo.pitch) < GEOM_EPS) {
+        printf("Helical pitch must be non-zero");
         throw std::invalid_argument("Helical pitch must be non-zero");
+    }
+        
     int size = m_geo.nx * m_geo.ny * m_geo.nz;
     vol.assign(size, 0.f);
-
+    //printf("debug2\n");
     if (m_geo.scan_type == 0)
         calculate_kLines();
     else if (m_geo.scan_type == 1)
@@ -730,18 +752,21 @@ void GpuKatsevichRecon::Reconstruct(const std::vector<float>& proj, std::vector<
     if (!FilterKernel(d_proj))
     {
         cleanup();
+        printf("CUDA filtering failed");
         throw std::runtime_error("CUDA filtering failed");
     }
 
     if (!build_PI_LUT())
     {
         cleanup();
+        printf("CUDA build PI_LUT failed");
         throw std::runtime_error("CUDA build PI_LUT failed");
     }
 
     if (!BackProjKernel(d_filtedProj, d_vol))
     {
         cleanup();
+        printf("CUDA backprojection failed");
         throw std::runtime_error("CUDA backprojection failed");
     }
 

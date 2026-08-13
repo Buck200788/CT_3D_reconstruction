@@ -54,20 +54,22 @@ void Filter::Filter_(int len, FilterType filter, float detector_spacing, int typ
 
 Filter::Filter(int len, FilterType filter, double spacing, int type, double cutoffRatio)
 {
-    if (len <= 0)
+    if (len <= 0) {
+        printf("len must be positive");
         throw std::invalid_argument("len must be positive");
+    }
 
-    if (!(spacing > 0.0))
-        throw std::invalid_argument(
-            "spacing must be positive"
-        );
+    if (!(spacing > 0.0)) {
+        printf("spacing must be positive");
+        throw std::invalid_argument("spacing must be positive");
+    }
+       
 
     if (!(cutoffRatio > 0.0 &&
         cutoffRatio <= 1.0))
     {
-        throw std::invalid_argument(
-            "cutoffRatio must be in (0, 1]"
-        );
+        printf("cutoffRatio must be in (0, 1]");
+        throw std::invalid_argument("cutoffRatio must be in (0, 1]");
     }
 
     const double pi = std::acos(-1.0);
@@ -92,6 +94,7 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
             const double s = std::sin(angle);
             if (std::abs(s) < 1.0e-12)
             {
+                printf("Angular filter singularity");
                 throw std::runtime_error("Angular filter singularity");
             }
             const double x = pi * s;
@@ -99,6 +102,7 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
         }
         else
         {
+            printf("type must be 0 for equidistant or 1 for equiangular");
             throw std::invalid_argument("type must be 0 for equidistant or 1 for equiangular");
         }
 

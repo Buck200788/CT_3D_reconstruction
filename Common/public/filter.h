@@ -26,6 +26,7 @@ inline FilterType Str2FilterType(const std::string& s)
     if (s == "hamming")    return FilterType::Hamming;
     if (s == "hann")       return FilterType::Hann;
     if (s == "none")       return FilterType::None;
+    printf("invalid filter type");
     throw std::invalid_argument("invalid filter type");
 }
 
