@@ -51,7 +51,6 @@ void FFT1D::fftCoreRadix2(std::vector<cd>& data, bool invert) const
         for (auto& val : data) val /= n;
 }
 
-// Bluestein Chirp-Z 任意长度FFT核心实现
 std::vector<cd> FFT1D::bluesteinFFT(const std::vector<cd>& in, bool invert) const
 {
     int N = (int)in.size();
@@ -75,7 +74,6 @@ std::vector<cd> FFT1D::bluesteinFFT(const std::vector<cd>& in, bool invert) cons
         b[n] = std::conj(cd(std::cos(theta), std::sin(theta)));
     }
 
-    // 基2FFT做卷积
     fftCoreRadix2(a, false);
     fftCoreRadix2(b, false);
     for (int i = 0; i < M; i++) a[i] *= b[i];
@@ -101,14 +99,12 @@ std::vector<cd> FFT1D::transform(const std::vector<double>& signal, bool invert,
 std::vector<cd> FFT1D::transform(const std::vector<cd>& signal, bool invert, bool autoPad)
 {
     int N = (int)signal.size();
-    // 开启补零：沿用旧基2逻辑
     if (autoPad)
     {
         auto data = padToPower2(signal);
         fftCoreRadix2(data, invert);
         return data;
     }
-    // 不补零：走Bluestein任意长度DFT，和numpy完全对齐
     return bluesteinFFT(signal, invert);
 }
 

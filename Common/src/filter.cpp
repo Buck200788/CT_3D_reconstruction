@@ -73,7 +73,7 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
     const double pi = std::acos(-1.0);
     const int order = nextpow2(2 * len);
     const int halfLen = order / 2 + 1;
-    // 当前采用奇数长度核
+    // odd number kernel
     const int fftLength =  2 * halfLen - 1;
     filt.assign(fftLength, 0.0f);
     std::vector<float> halfKernel(halfLen, 0.0f);
@@ -105,7 +105,6 @@ Filter::Filter(int len, FilterType filter, double spacing, int type, double cuto
         halfKernel[i] = static_cast<float>(value);
     }
 
-    // 空间核的循环排列
     std::copy( halfKernel.begin(),halfKernel.end(),filt.begin());
     for (int i = halfLen; i < fftLength; ++i)
     {
@@ -127,7 +126,6 @@ void Filter::window_filter(std::vector<float>& filt, FilterType filter, double c
     std::vector<float> halfSpectrum(halfLen, 0.0f);
     for (int i = 0; i < halfLen; ++i)
     {
-        // 这里的 2 是否保留，取决于反投影归一化
         halfSpectrum[i] = 2.0f * static_cast<float>(spectrum[i].real());
     }
     for (int i = 1; i < halfLen; ++i)
@@ -165,7 +163,6 @@ void Filter::window_filter(std::vector<float>& filt, FilterType filter, double c
         }
         halfSpectrum[i] *= win;
     }
-    // 恢复完整实对称频谱
     std::copy(halfSpectrum.begin(), halfSpectrum.end(), filt.begin());
     for (int k = halfLen; k < fftLength; ++k)
     {

@@ -40,7 +40,7 @@ void CpuFDKRecon::BackProjectOMP(const std::vector<float>& proj, std::vector<flo
     //{
     //    if (!std::isfinite(proj[i]))
     //    {
-    //        printf("滤波数组存在inf，索引%zu，值=%e\n", i, proj[i]);
+    //        printf("proj has inf，index %zu，value=%e\n", i, proj[i]);
     //        break;
     //    }
     //}

@@ -40,7 +40,7 @@ inline int nextpow2(int x)
 class Filter
 {
 private:
-    std::vector<float> filt; // Ë½ÓÐÂË²¨ºËÊý×é
+    std::vector<float> filt; 
 public:
     void Filter_(int len, FilterType filter, float d = 1.0f, int type=0);
     explicit Filter(int len, FilterType filter, double spacing = 1.0, int type = 0, double cutoffRatio = 1.0);

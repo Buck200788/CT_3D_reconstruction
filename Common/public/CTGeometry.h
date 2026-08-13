@@ -1,9 +1,9 @@
 #pragma once
-// CT锥束螺旋通用几何参数
+// CT helical scan parameters
 #include <string>
 struct CTGeometry
 {
-    // 探测器
+    // detector
     int nDetU = 64;
     int nDetV = 64;
     float du = 0.8f;
@@ -13,7 +13,7 @@ struct CTGeometry
     float SID = 600.f;
     float pitch = 1.0f;
 
-    // 投影角度
+    // projection angles
     int nViews = 360;
     float angleStep = 2.f * 3.1415926535f / 360.f;
 
@@ -21,7 +21,7 @@ struct CTGeometry
 
     float detectorVCenterOffsetPix = 0.f;
 
-    // 重建体素
+    // reconstructed vox
     int nx = 64;
     int ny = 64;
     int nz = 64;

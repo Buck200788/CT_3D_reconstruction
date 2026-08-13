@@ -17,9 +17,8 @@ int test_FFT1D()
     FFT1D fftSolver;
     std::vector<double> sig = { 1, 2, 3, 4, 5, 6, 7, 1 };
 
-    // 正变换FFT
     auto fftRes = fftSolver.fft(sig);
-    std::cout << "FFT结果：\n";
+    std::cout << "FFT results：\n";
     for (auto& v : fftRes)
         std::cout << v << " ";
     std::cout << "\n";
@@ -31,7 +30,7 @@ int test_FFT1D()
 
     // 逆变换IFFT还原时域
     auto ifftRes = fftSolver.ifft(fftRes);
-    std::cout << "IFFT还原实部：\n";
+    std::cout << "IFFT real part：\n";
     for (auto& v : ifftRes)
         std::cout << v.real() << " ";
 
