@@ -50,15 +50,15 @@ int main()
     geo.nDetU = 600;
     geo.nDetV = 128;
     geo.du = 1.0f;
-    //geo.du = 0.0009908f;
+    //geo.du = 0.0009908966323834423f;  // equal angle case, unit should be rad
     geo.dv = 1.0f;
     geo.SDD = 1000.f;
     geo.SID = 500.f;
     geo.pitch = 36.f;
-    geo.nViews = 1600;
-    geo.angleStep = 1.f / 180.f * std::acosf(-1.f);
-    geo.nx = 180;
-    geo.ny = 180;
+    geo.nViews = 3200;
+    geo.angleStep = 0.5f / 180.f * std::acosf(-1.f);
+    geo.nx = 165;
+    geo.ny = 165;
     geo.nz = 128;
     geo.dx = 1.f;
     geo.dy = 1.f;
@@ -69,27 +69,6 @@ int main()
     rec_p.filter_name = "ram-lak";
     rec_p.cuda_device = 0;
 
-    //geo.nDetU = 512;
-    //geo.nDetV = 12;
-    //geo.du = 0.002569f; // d_angle
-    //geo.dv = 10.f; // d_det
-    //geo.detectorVCenterOffsetPix = 2.0f;
-    //geo.SDD = 1180.f;
-    //geo.SID = 710.;
-    //geo.pitch = 120.f;
-    //geo.nViews = 5040;
-    //geo.angleStep = -0.5f / 180.f * std::acosf(-1.f);
-    //geo.nx = 512;
-    //geo.ny = 512;
-    //geo.nz = 700;
-    //geo.dx = 1.f;
-    //geo.dy = 1.f;
-    //geo.dz = 1.0f;
-    //geo.zStart = -350.f;
-    //geo.scan_type = 1;
-    //
-    //rec_p.filter_name = "ram-lak";
-    //rec_p.cuda_device = 0;
 
     //ReconAlgorithm algo = ReconAlgorithm::FDK;
     ReconAlgorithm algo = ReconAlgorithm::Katsevich;
@@ -97,18 +76,14 @@ int main()
     std::vector<float> volume(geo.nx * geo.ny * geo.nz, 0.f);
 
     auto t0 = high_resolution_clock::now();
-    std::ifstream ins("D:\\bagC_600x128x1600.raw", std::ios::binary | std::ios::in);
-    //std::ifstream ins("D:\\bag_interp_3_6144x4320.raw", std::ios::binary | std::ios::in);
-    //std::ifstream ins("D:\\bag_interp_1_6144x5040.raw", std::ios::binary | std::ios::in);
+    std::ifstream ins("D:\\dataC_type0_600x128x3200.raw", std::ios::binary | std::ios::in);
     if (ins.is_open()) {
         ins.read(reinterpret_cast<char*>(proj.data()), sizeof(float) * proj.size());
         ins.close();
     }
-
-    //std::ofstream outs1("D:\\data1_512x128x1600.raw", std::ios::binary);
-    //outs1.write(reinterpret_cast<const char*>(proj.data()), sizeof(float) * proj.size());
-    //outs1.close();
-    //return 0;
+    else {
+        printf("open proj file failed");
+    }
 
     auto t1 = high_resolution_clock::now();
     auto cost_ms = duration_cast<milliseconds>(t1 - t0);
@@ -119,6 +94,8 @@ int main()
     BaseRecon* recon = nullptr;
     HMODULE hDll = nullptr;
     PFN_Destroy fnDel = nullptr;
+
+    std::string used_device = "GPU";
 
     if (HasAvailableCudaDevice())
     {
@@ -135,6 +112,7 @@ int main()
     if (!recon)
     {
         std::cout << "Use CPU parallel mode\n";
+        used_device = "CPU";
         hDll = LoadLibraryA("ReconCPU.dll");
         if (hDll)
         {
@@ -161,11 +139,14 @@ clean:
     t0 = t1;
 
     char wf[256] = {};
-    sprintf(wf, "D:\\recon_%dx%dx%d.raw", geo.nx, geo.ny, geo.nz);
+    sprintf(wf, "D:\\recon_type%d_%s_%s_%dx%dx%d.raw", geo.scan_type, ReconAlgorithmToString(algo), used_device, geo.nx, geo.ny, geo.nz);
     std::ofstream outs(wf, std::ios::binary | std::ios::out);
     if (outs.is_open()) {
         outs.write(reinterpret_cast<char*>(volume.data()), sizeof(float) * volume.size());
         outs.close();
+    }
+    else {
+        printf("write recon file %s failed\n",wf);
     }
 
     t1 = high_resolution_clock::now();

@@ -9,7 +9,6 @@ __global__ void FDKKernel(float* dProj, float* dVol, CTGeometry geo)
     int idx = blockIdx.x * 256 + threadIdx.x;
     int volSize = geo.nx * geo.ny * geo.nz;
     if (idx >= volSize) return;
-    // GPU FDK计算预留
 
     dVol[idx] = 0.0;
     const float PI = acosf(-1.0f);

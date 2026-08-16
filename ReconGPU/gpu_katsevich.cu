@@ -426,7 +426,7 @@ void GpuKatsevichRecon::calculate_kLines()
     const float alpha_fov = std::asin(fov_radius / m_geo.SID);
     const float alpha_detector = std::atan(u_edge / m_geo.SDD);
     if (alpha_detector < alpha_fov) {
-        printf("Detector does not cover reconstruction FOV");
+        printf("Detector %f does not cover reconstruction FOV %f", alpha_detector, alpha_fov);
         throw std::runtime_error("Detector does not cover reconstruction FOV");
     }
     const float alpha_m = alpha_fov;

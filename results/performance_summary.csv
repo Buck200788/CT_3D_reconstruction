@@ -1,0 +1,5 @@
+algorithm,detector_type,cpu_seconds,gpu_seconds,speedup
+FDK,0,47.199,3.093,15.26
+FDK,1,40.787,3.078,13.25
+Katsevich,0,20.804,2.355,8.83
+Katsevich,1,12.674,2.388,5.31
