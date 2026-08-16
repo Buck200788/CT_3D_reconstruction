@@ -2,7 +2,7 @@
 
 **CPU and CUDA implementations of FDK and Katsevich reconstruction for helical cone-beam CT.**
 
-HelixCT-Recon is a C++17/CUDA research and engineering project for reconstructing helical cone-beam CT data. It provides matched CPU and NVIDIA GPU implementations of two substantially different reconstruction pipelines, supports flat and equiangular detector models, and uses consistent geometry and memory conventions across both backends.
+HelixCT-Recon is a C++17/CUDA research and engineering project for reconstructing helical cone-beam CT data. It provides matched multithreaded CPU and NVIDIA GPU implementations of two substantially different reconstruction pipelines, supports flat and equiangular detector models, and uses consistent geometry and memory conventions across both backends.
 
 The project is intended for reconstruction research, numerical validation, and algorithm development. It is not a complete clinical CT processing pipeline.
 
@@ -10,22 +10,23 @@ The project is intended for reconstruction research, numerical validation, and a
 
 ## Why this project
 
-- FDK and Katsevich reconstruction implemented on both CPU and CUDA
+- FDK and Katsevich reconstruction implemented on both multithreaded CPU and CUDA backends
 - Flat/equidistant and equiangular detector geometries
 - Signed rotation direction and signed helical travel
 - Configurable detector V-center offset and source starting position
 - Shared CPU/GPU geometry, interpolation, filtering, and data-layout conventions
+- CPU parallelism using C++ worker threads, including parallel projection processing and reconstruction work; the published examples used 20 CPU threads
 - CPU/GPU result validation with published error metrics
 - Optional CUDA build: the CPU implementation remains available without a CUDA toolkit
 - Plugin-style shared libraries selected through a common reconstruction interface
 
-Measured examples show up to **15.26x observed GPU acceleration**, with close whole-volume agreement between corresponding CPU and GPU results. See [Results and validation](results/README.md) for figures, timings, and numerical metrics.
+Measured examples on a **12th Gen Intel Core i9-12900H** and an **NVIDIA GeForce RTX 4060 Laptop GPU with CUDA 12.0** show up to **15.26x observed GPU acceleration over the 20-thread CPU backend**, with close whole-volume agreement between corresponding CPU and GPU results. These are system-specific observations rather than universal performance claims. See [Results and validation](results/README.md) for figures, timings, and numerical metrics.
 
 ## Implemented algorithms
 
 ### FDK
 
-The FDK path performs detector-geometry pre-weighting, one-dimensional filtering along detector U, bilinear projection sampling, distance-weighted backprojection, and angular integration. It is an approximate helical cone-beam method and is generally the faster choice.
+The FDK path performs detector-geometry pre-weighting, one-dimensional filtering along detector U, bilinear projection sampling, distance-weighted backprojection, and angular integration. The CPU implementation distributes projection preprocessing and backprojection work across C++ worker threads; the reported example runs used 20 threads. FDK is an approximate helical cone-beam method and is generally the faster choice.
 
 Implemented filters:
 
@@ -49,7 +50,7 @@ Directional derivative (G1)
         -> backprojection
 ```
 
-A lookup table over one helical pitch avoids repeatedly solving the nonlinear PI-line problem for every voxel during backprojection.
+A lookup table over one helical pitch avoids repeatedly solving the nonlinear PI-line problem for every voxel during backprojection. The CPU implementation parallelizes computationally intensive filtering and reconstruction stages with C++ worker threads, while the GPU implementation maps these stages to CUDA kernels. The CPU measurements reported with this project used 20 worker threads.
 
 ## Detector models
 
@@ -112,7 +113,7 @@ The current voxel grid is centered on the world origin. The caller must allocate
 ```text
 HelixCT-Recon/
 |-- Common/       Geometry, base interface, filtering, FFT, and utilities
-|-- ReconCPU/     CPU FDK and Katsevich shared library
+|-- ReconCPU/     Multithreaded CPU FDK and Katsevich shared library
 |-- ReconGPU/     CUDA FDK and Katsevich shared library
 |-- Demo/         Windows DLL-loading example
 |-- results/      Images, metrics, logs, and analysis script
@@ -126,7 +127,7 @@ CPU build:
 
 - CMake 3.22 or newer
 - C++17 compiler
-- Standard C++ threading support
+- Standard C++ threading support; available CPU cores are used by parallel reconstruction stages
 
 GPU build additionally requires:
 
@@ -163,7 +164,7 @@ On multi-configuration generators, binaries are placed under `build/bin/Release`
 
 ## Public interface
 
-Both backends implement the same abstract interface:
+The multithreaded CPU and CUDA backends implement the same abstract interface:
 
 ```cpp
 class BaseRecon {
@@ -270,4 +271,3 @@ No license is currently declared. Add an explicit `LICENSE` file before inviting
 ## Disclaimer
 
 This software is provided for research and engineering evaluation. Validate geometry, normalization, calibration, numerical accuracy, and image quality independently before using it with a physical CT system. It is not certified medical software.
-

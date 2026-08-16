@@ -1,6 +1,6 @@
 # Reconstruction results and CPU/GPU validation
 
-This directory contains example outputs for the FDK and Katsevich implementations in [HelixCT-Recon](../README.md). Its purpose is to make the reconstruction behavior visible, quantify agreement between the CPU and CUDA backends, and preserve the measurements used in the project README.
+This directory contains example outputs for the FDK and Katsevich implementations in [HelixCT-Recon](../README.md). Its purpose is to make the reconstruction behavior visible, quantify agreement between the multithreaded CPU and CUDA backends, and preserve the measurements used in the project README.
 
 ## Result set
 
@@ -52,6 +52,17 @@ Machine-readable values are stored in [`cpu_gpu_metrics.csv`](cpu_gpu_metrics.cs
 
 ## Observed execution times
 
+The CPU runs used **20 worker threads**. The speedup values therefore compare CUDA execution against the project's parallel 20-thread CPU backend, not against a single-thread implementation.
+
+### Recorded execution environment
+
+| Component | Configuration |
+|---|---|
+| CPU | 12th Gen Intel Core i9-12900H |
+| CPU parallelism | 20 worker threads |
+| GPU | NVIDIA GeForce RTX 4060 Laptop GPU |
+| CUDA version | 12.0 |
+
 | Algorithm | Detector type | CPU time | GPU time | Observed speedup |
 |---|---:|---:|---:|---:|
 | FDK | 0 | 47.199 s | 3.093 s | 15.26x |
@@ -59,7 +70,7 @@ Machine-readable values are stored in [`cpu_gpu_metrics.csv`](cpu_gpu_metrics.cs
 | Katsevich | 0 | 20.804 s | 2.355 s | 8.83x |
 | Katsevich | 1 | 12.674 s | 2.388 s | 5.31x |
 
-These timings were extracted from the supplied run logs. They are single observed executions rather than a controlled benchmark. The hardware models, compiler and optimization settings, CUDA version, warm-up procedure, and timing boundaries were not recorded, so the values should not be used as portable performance claims.
+These timings were extracted from the supplied run logs. They are single observed executions rather than a controlled benchmark. The CPU and GPU models, CUDA version, and CPU worker-thread count are known, but the compiler and optimization settings, GPU power configuration, warm-up procedure, and precise timing boundaries were not recorded. The values should therefore be treated as results from this particular setup, not as portable performance claims. Laptop CPU and GPU performance can also vary with thermal and power limits.
 
 Machine-readable values are stored in [`performance_summary.csv`](performance_summary.csv).
 
@@ -121,9 +132,10 @@ The script reads the raw volumes but does not modify them.
 
 Before publishing these numbers as a formal benchmark, record:
 
-- CPU and GPU models;
+- CPU physical/logical core counts;
+- confirmation that all 20 configured worker threads were active;
 - RAM and operating system;
-- CUDA Toolkit and driver versions;
+- NVIDIA driver version;
 - compiler and CMake versions;
 - Release/Debug configuration and optimization flags;
 - whether file I/O and initialization are included;
@@ -135,4 +147,3 @@ A useful report would present the median of several runs and include either a ra
 ## Data-use note
 
 Only publish the raw volumes or input projections if the data are synthetic, openly licensed, or owned by you with permission to redistribute them. Do not publish confidential, patient-identifiable, employer-owned, or otherwise restricted scan data.
-
